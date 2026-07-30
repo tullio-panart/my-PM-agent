@@ -1,0 +1,80 @@
+name: Learner feedback
+description: Record a privacy-safe workshop observation or confusing instruction
+title: "[Learner feedback]: "
+labels:
+  - learner-feedback
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include names, email addresses, API keys, passwords, `.env`, backups, private task content, or credential screenshots.
+  - type: input
+    id: release
+    attributes:
+      label: Release version or commit
+      placeholder: v0.2.0 or a short commit ID
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS — Apple Silicon
+        - macOS — Intel
+        - Windows — x64
+        - Windows — ARM
+        - Other or unknown
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Exercise or instruction
+      placeholder: Exercise 1, Getting started — Part 2
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the learner expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Redact any secret or private content.
+    validations:
+      required: true
+  - type: dropdown
+    id: intervention
+    attributes:
+      label: Was instructor intervention required?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Smallest recovery that worked
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      options:
+        - P0 — security/data risk or most teams blocked
+        - P1 — one team blocked or instructor required
+        - P2 — repeated confusion or delay
+        - P3 — cosmetic
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed personal information, credentials, secrets, backups, and private task content.
+          required: true

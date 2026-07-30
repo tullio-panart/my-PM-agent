@@ -1,0 +1,541 @@
+{
+  "name": "PHASE 4 TEST HARNESS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phase4-test-list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -600,
+        -300
+      ],
+      "id": "49000000-0000-4000-8000-000000000001",
+      "name": "List Test Webhook",
+      "webhookId": "49000000-0000-4000-8000-000000000101"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "phase4ListTasks",
+          "mode": "list",
+          "cachedResultName": "20 - TOOL - list_tasks"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $json.body.sessionId }}",
+            "status": "={{ $json.body.status }}",
+            "priority": "={{ $json.body.priority }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -340,
+        -300
+      ],
+      "id": "49000000-0000-4000-8000-000000000002",
+      "name": "Call list_tasks"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -80,
+        -300
+      ],
+      "id": "49000000-0000-4000-8000-000000000003",
+      "name": "Return List Result"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phase4-test-create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -600,
+        -80
+      ],
+      "id": "49000000-0000-4000-8000-000000000004",
+      "name": "Create Test Webhook",
+      "webhookId": "49000000-0000-4000-8000-000000000104"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "phase4CreateTask",
+          "mode": "list",
+          "cachedResultName": "21 - TOOL - create_task"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $json.body.sessionId }}",
+            "requestId": "={{ $json.body.requestId }}",
+            "title": "={{ $json.body.title }}",
+            "description": "={{ $json.body.description }}",
+            "status": "={{ $json.body.status }}",
+            "priority": "={{ $json.body.priority }}",
+            "dueDate": "={{ $json.body.dueDate }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -340,
+        -80
+      ],
+      "id": "49000000-0000-4000-8000-000000000005",
+      "name": "Call create_task"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -80,
+        -80
+      ],
+      "id": "49000000-0000-4000-8000-000000000006",
+      "name": "Return Create Result"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phase4-test-update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -600,
+        140
+      ],
+      "id": "49000000-0000-4000-8000-000000000007",
+      "name": "Update Test Webhook",
+      "webhookId": "49000000-0000-4000-8000-000000000107"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "phase4UpdateTaskStatus",
+          "mode": "list",
+          "cachedResultName": "22 - TOOL - update_task_status"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $json.body.sessionId }}",
+            "requestId": "={{ $json.body.requestId }}",
+            "taskId": "={{ $json.body.taskId }}",
+            "status": "={{ $json.body.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "taskId",
+              "displayName": "taskId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -340,
+        140
+      ],
+      "id": "49000000-0000-4000-8000-000000000008",
+      "name": "Call update_task_status"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -80,
+        140
+      ],
+      "id": "49000000-0000-4000-8000-000000000009",
+      "name": "Return Update Result"
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "phase4-test-audit",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -600,
+        360
+      ],
+      "id": "49000000-0000-4000-8000-000000000010",
+      "name": "Audit Test Webhook",
+      "webhookId": "49000000-0000-4000-8000-000000000110"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tool_audit",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": []
+        },
+        "returnAll": true,
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "ASC"
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -340,
+        360
+      ],
+      "id": "49000000-0000-4000-8000-000000000011",
+      "name": "Read Tool Audit",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const audits = $input.all().map((item) => item.json).filter((row) => Number.isInteger(row.id));\nreturn [{ json: { count: audits.length, audits } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        360
+      ],
+      "id": "49000000-0000-4000-8000-000000000012",
+      "name": "Collect Audit Rows"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        180,
+        360
+      ],
+      "id": "49000000-0000-4000-8000-000000000013",
+      "name": "Return Audit Rows"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "List Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call list_tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call list_tasks": {
+      "main": [
+        [
+          {
+            "node": "Return List Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call create_task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call create_task": {
+      "main": [
+        [
+          {
+            "node": "Return Create Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call update_task_status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call update_task_status": {
+      "main": [
+        [
+          {
+            "node": "Return Update Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Tool Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tool Audit": {
+      "main": [
+        [
+          {
+            "node": "Collect Audit Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Audit Rows": {
+      "main": [
+        [
+          {
+            "node": "Return Audit Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 30,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "49000000-0000-4000-8000-000000000099",
+  "meta": {
+    "testOnly": true,
+    "phase": 4,
+    "testedWithN8n": "2.30.5"
+  },
+  "id": "phase4TestHarness",
+  "tags": []
+}

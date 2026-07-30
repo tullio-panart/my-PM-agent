@@ -1,0 +1,38 @@
+name: Release improvement
+description: Propose a tested change for a future local release
+title: "[Improvement]: "
+labels:
+  - improvement
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Related feedback or issue
+      placeholder: "#123 or internal observation"
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and evidence
+      description: Describe the root cause, not only the preferred solution.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Smallest proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification required
+      placeholder: Clean-copy setup, Windows parser, browser widths, human retest...
+    validations:
+      required: true
+  - type: checkboxes
+    id: baseline
+    attributes:
+      label: Release discipline
+      options:
+        - label: This will be developed on a branch and will not silently change a live course baseline.
+          required: true

@@ -1,0 +1,4 @@
+id: enabled-example
+name: Enabled Example
+version: 1.0.0
+description: Proves enabled instructions are compiled.

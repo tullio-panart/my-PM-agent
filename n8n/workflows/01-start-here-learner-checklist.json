@@ -1,0 +1,171 @@
+{
+  "name": "01 - START HERE - Learner Checklist",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# Welcome — your local agent is installed\nThe setup helper has already imported the reviewed workflows, created the local tables, and loaded the enabled Markdown skills.\n\nWork through steps 1–5 from left to right. Keep your Claude API key private: enter it only in an n8n credential.",
+        "height": 260,
+        "width": 540,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -940,
+        -520
+      ],
+      "id": "60000000-0000-4000-8000-000000000001",
+      "name": "Welcome"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Create the local owner\nIf this is your first n8n visit, complete **Set up owner account**.\n\nUse a private password. The account exists only in this project's private local data folder.",
+        "height": 250,
+        "width": 330,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -940,
+        -190
+      ],
+      "id": "60000000-0000-4000-8000-000000000002",
+      "name": "Create owner"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Add Claude safely\nOpen **Credentials**, create an **Anthropic** credential named `Anthropic account`, and paste the API key there.\n\nNever put the key in `.env`, a workflow note, the chat, GitHub, or a screenshot.",
+        "height": 280,
+        "width": 350,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -550,
+        -190
+      ],
+      "id": "60000000-0000-4000-8000-000000000003",
+      "name": "Add Claude"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Publish two entry points\nOpen `00 - START HERE - Project Partner`, select `Anthropic account` in **Claude - Sonnet 4.6**, save, and publish.\n\nThen open and publish `90 - DEBUG - Agent Health`.",
+        "height": 280,
+        "width": 360,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -140,
+        -190
+      ],
+      "id": "60000000-0000-4000-8000-000000000004",
+      "name": "Publish entry points"
+    },
+    {
+      "parameters": {
+        "content": "## 4. Prove the agent works\nOpen the chat at `http://localhost:3000` and try:\n\n1. Ask for a short plan.\n2. Ask which local tasks exist.\n3. Propose a new task.\n4. Check it, then send the exact `CONFIRM XXXXXXXX` phrase.\n\nPlain “yes” must not write.",
+        "height": 330,
+        "width": 390,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        280,
+        -190
+      ],
+      "id": "60000000-0000-4000-8000-000000000005",
+      "name": "Test the agent"
+    },
+    {
+      "parameters": {
+        "content": "## 5. Make it yours\nChange the name and colour in `apps/chat/public/agent.config.js`.\n\nChange one instruction in `skills/project-assistant/SKILL.md`, then run the skill-sync helper and start a new conversation.\n\nFinally, run the diagnostics helper. Every check should be green.",
+        "height": 330,
+        "width": 390,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        730,
+        -190
+      ],
+      "id": "60000000-0000-4000-8000-000000000006",
+      "name": "Customise"
+    },
+    {
+      "parameters": {
+        "content": "## Optional: run this checklist\nSelect **Execute workflow** to return the same next actions as structured data. This does not call Claude, change a task, or use an API key.",
+        "height": 220,
+        "width": 430,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -410,
+        270
+      ],
+      "id": "60000000-0000-4000-8000-000000000007",
+      "name": "Run explanation"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        380
+      ],
+      "id": "60000000-0000-4000-8000-000000000008",
+      "name": "Run Checklist"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  readyToContinue: true,\n  checklist: [\n    'Create the local n8n owner account',\n    'Store the Claude API key only in the Anthropic credential',\n    'Select the credential and publish the main and health workflows',\n    'Test planning, task reading, and one confirmed write in the browser chat',\n    'Customise the chat and one enabled Markdown skill',\n    'Run the diagnostics helper until every check is green',\n  ],\n  guide: 'README.md',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        380
+      ],
+      "id": "60000000-0000-4000-8000-000000000009",
+      "name": "Show Next Actions"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Checklist": {
+      "main": [
+        [
+          {
+            "node": "Show Next Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 10,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": true
+  },
+  "versionId": "60000000-0000-4000-8000-000000000101",
+  "meta": {
+    "phase": 6,
+    "testedWithN8n": "2.30.5"
+  },
+  "id": "phase6LearnerChecklist",
+  "tags": []
+}

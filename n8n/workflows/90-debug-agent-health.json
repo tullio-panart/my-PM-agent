@@ -1,0 +1,94 @@
+{
+  "name": "90 - DEBUG - Agent Health",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Safe local health check\nPublish this workflow to expose `GET /webhook/agent-health` on localhost.\n\nIt proves that n8n and the production webhook are running. It deliberately returns no credentials, environment variables, user data, workflow internals, or Claude response.",
+        "height": 260,
+        "width": 500,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -220
+      ],
+      "id": "30000000-0000-4000-8000-000000000201",
+      "name": "Safe health note"
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "agent-health",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -240,
+        80
+      ],
+      "id": "30000000-0000-4000-8000-000000000202",
+      "name": "Agent Health Webhook",
+      "webhookId": "30000000-0000-4000-8000-000000000302"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'ok', service: 'n8n', workflow: 'agent-health', timestamp: $now.toISO() } }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json; charset=utf-8"
+              }
+            ]
+          },
+          "enableStreaming": false
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        60,
+        80
+      ],
+      "id": "30000000-0000-4000-8000-000000000203",
+      "name": "Return Safe Health"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agent Health Webhook": {
+      "main": [
+        [
+          {
+            "node": "Return Safe Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 10,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": true
+  },
+  "versionId": "30000000-0000-4000-8000-000000000301",
+  "meta": {
+    "phase": 3,
+    "testedWithN8n": "2.30.5"
+  },
+  "id": "phase3AgentHealth",
+  "tags": []
+}

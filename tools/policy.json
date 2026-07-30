@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "id": "list_tasks",
+      "risk": "read",
+      "available": true,
+      "modelCallable": true,
+      "mode": "automatic",
+      "workflowId": "phase4ListTasks"
+    },
+    {
+      "id": "create_task",
+      "risk": "write",
+      "available": true,
+      "modelCallable": true,
+      "mode": "confirmation_required",
+      "proposalWorkflowId": "phase5ProposeCreateTask",
+      "executionWorkflowId": "phase4CreateTask"
+    },
+    {
+      "id": "update_task_status",
+      "risk": "write",
+      "available": true,
+      "modelCallable": true,
+      "mode": "confirmation_required",
+      "proposalWorkflowId": "phase5ProposeTaskStatus",
+      "executionWorkflowId": "phase4UpdateTaskStatus"
+    },
+    {
+      "id": "delete_task",
+      "risk": "destructive",
+      "available": false,
+      "modelCallable": false,
+      "mode": "unavailable"
+    },
+    {
+      "id": "archive_task",
+      "risk": "destructive",
+      "available": false,
+      "modelCallable": false,
+      "mode": "unavailable"
+    },
+    {
+      "id": "bulk_change_tasks",
+      "risk": "destructive",
+      "available": false,
+      "modelCallable": false,
+      "mode": "unavailable"
+    }
+  ]
+}

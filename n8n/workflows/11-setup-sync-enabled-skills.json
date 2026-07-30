@@ -1,0 +1,290 @@
+{
+  "id": "phase5SyncEnabledSkills",
+  "name": "11 - SETUP - Sync Enabled Skills",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Enabled skills only\nThe repository helper validates `skill.yaml`, reads only IDs in `skills/enabled.txt`, and sends the compiled Markdown here.\n\nThis temporary localhost webhook stores one versioned bundle in `agent_config`. The import helper removes the webhook immediately after syncing.",
+        "height": 260,
+        "width": 620,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -260
+      ],
+      "id": "51000000-0000-4000-8000-000000000001",
+      "name": "Skill sync explanation"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-enabled-skills",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -620,
+        80
+      ],
+      "id": "51000000-0000-4000-8000-000000000002",
+      "name": "Temporary Skill Sync Webhook",
+      "webhookId": "51000000-0000-4000-8000-000000000102"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const body = $json.body && typeof $json.body === 'object' && !Array.isArray($json.body)\n  ? $json.body\n  : {};\nconst enabledSkills = Array.isArray(body.enabledSkills) ? body.enabledSkills : [];\nconst combinedInstructions =\n  typeof body.combinedInstructions === 'string' ? body.combinedInstructions.trim() : '';\nconst sourceHash = typeof body.sourceHash === 'string' ? body.sourceHash : '';\nconst ids = enabledSkills.map((skill) => skill?.id);\nconst uniqueIds = new Set(ids);\nconst validSkill = (skill) =>\n  skill &&\n  typeof skill.id === 'string' &&\n  /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.id) &&\n  typeof skill.name === 'string' &&\n  typeof skill.version === 'string' &&\n  typeof skill.description === 'string' &&\n  typeof skill.instructions === 'string';\n\nlet error = null;\nif (body.schemaVersion !== 1) {\n  error = 'The skill bundle schema version is not supported.';\n} else if (\n  enabledSkills.length === 0 ||\n  !enabledSkills.every(validSkill) ||\n  uniqueIds.size !== enabledSkills.length\n) {\n  error = 'The enabled skill list is empty or invalid.';\n} else if (combinedInstructions.length === 0 || combinedInstructions.length > 24000) {\n  error = 'Combined skill instructions must contain 1-24,000 characters.';\n} else if (!/^[a-f0-9]{64}$/.test(sourceHash)) {\n  error = 'The skill source hash is invalid.';\n} else if (!enabledSkills.every((skill) => combinedInstructions.includes(`(${skill.id}@${skill.version})`))) {\n  error = 'The compiled instructions do not match the enabled skill metadata.';\n}\n\nreturn {\n  json: {\n    valid: error === null,\n    ...(error\n      ? { response: { ok: false, error: { code: 'INVALID_SKILL_BUNDLE', message: error } } }\n      : {\n          configKey: 'enabledSkills',\n          value: JSON.stringify({\n            schemaVersion: 1,\n            enabledSkills,\n            combinedInstructions\n          }),\n          sourceHash,\n          response: {\n            ok: true,\n            enabledSkills: enabledSkills.map((skill) => skill.id),\n            sourceHash\n          }\n        })\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        80
+      ],
+      "id": "51000000-0000-4000-8000-000000000003",
+      "name": "Validate Skill Bundle"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "51000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -100,
+        80
+      ],
+      "id": "51000000-0000-4000-8000-000000000004",
+      "name": "Bundle Is Valid?"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "agent_config",
+        "columns": {
+          "column": [
+            {
+              "name": "configKey",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "string"
+            },
+            {
+              "name": "sourceHash",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        0
+      ],
+      "id": "51000000-0000-4000-8000-000000000005",
+      "name": "Create Agent Config Table"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "agent_config",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "configKey",
+              "condition": "eq",
+              "keyValue": "enabledSkills"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "configKey": "enabledSkills",
+            "value": "={{ $('Validate Skill Bundle').item.json.value }}",
+            "sourceHash": "={{ $('Validate Skill Bundle').item.json.sourceHash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "configKey",
+              "displayName": "configKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "value",
+              "displayName": "value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sourceHash",
+              "displayName": "sourceHash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        420,
+        0
+      ],
+      "id": "51000000-0000-4000-8000-000000000006",
+      "name": "Upsert Enabled Skills",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const validation = $('Validate Skill Bundle').first().json;\nif (!validation.valid) {\n  return { json: validation.response };\n}\nif (!Number.isInteger($json.id)) {\n  return {\n    json: {\n      ok: false,\n      error: {\n        code: 'SKILL_SYNC_UNAVAILABLE',\n        message: 'Enabled skills could not be saved. Rerun the skill sync helper.'\n      }\n    }\n  };\n}\nreturn { json: validation.response };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        80
+      ],
+      "id": "51000000-0000-4000-8000-000000000007",
+      "name": "Return Sync Result"
+    }
+  ],
+  "connections": {
+    "Temporary Skill Sync Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Skill Bundle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Skill Bundle": {
+      "main": [
+        [
+          {
+            "node": "Bundle Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bundle Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Create Agent Config Table",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Sync Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Agent Config Table": {
+      "main": [
+        [
+          {
+            "node": "Upsert Enabled Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Enabled Skills": {
+      "main": [
+        [
+          {
+            "node": "Return Sync Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 20,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "ae5cEabe-5555-4555-8555-555555555555",
+  "meta": {
+    "phase": 5,
+    "testedWithN8n": "2.30.5",
+    "setupPurpose": "enabled-skills"
+  },
+  "tags": [],
+  "pinData": {}
+}

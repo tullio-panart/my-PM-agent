@@ -1,0 +1,37 @@
+# Local secrets and generated environment
+.env
+.env.*
+!.env.example
+
+# Local runtime data: the n8n database, encrypted credentials, service logs,
+# and process records all live here and must never be committed
+data/
+
+# Verified project-local Node.js runtime, downloaded only when Node 24+ is not
+# already available. It is reproducible from .node-version and never committed.
+.runtime/
+
+# Local n8n backups contain encrypted credentials and an encryption-key backup
+backups/*
+!backups/.gitkeep
+
+# Local workflow exports may contain instance-specific credential references
+n8n/exports/
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Future chat application output
+node_modules/
+dist/
+coverage/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Generated release kits contain source archives and checksums
+instructor-pack/

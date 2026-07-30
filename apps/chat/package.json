@@ -1,0 +1,23 @@
+{
+  "name": "@ai-solopreneur/chat",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "check": "npm test",
+    "start": "node dist/server.js",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "busboy": "1.6.0"
+  },
+  "devDependencies": {
+    "@types/busboy": "1.5.4",
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}

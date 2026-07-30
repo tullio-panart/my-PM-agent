@@ -1,0 +1,521 @@
+{
+  "name": "10 - SETUP - Local Task Data",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Create the local project data\nThe import helper runs this workflow automatically. It safely reuses existing tables and adds only missing sample tasks. You may also run it manually.\n\n**tasks** stores the source-of-truth project data. n8n automatically supplies each row's `id`, `createdAt`, and `updatedAt`.\n\n**tool_audit** records every tool attempt without giving the model arbitrary database access.",
+        "height": 330,
+        "width": 570,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -300
+      ],
+      "id": "40000000-0000-4000-8000-000000000001",
+      "name": "Setup explanation"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000002",
+      "name": "Run Setup"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "setup-task-data",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -500,
+        260
+      ],
+      "id": "40000000-0000-4000-8000-000000000008",
+      "name": "Temporary Setup Webhook",
+      "webhookId": "40000000-0000-4000-8000-000000000108"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "tasks",
+        "columns": {
+          "column": [
+            {
+              "name": "requestId",
+              "type": "string"
+            },
+            {
+              "name": "lastRequestId",
+              "type": "string"
+            },
+            {
+              "name": "title",
+              "type": "string"
+            },
+            {
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "priority",
+              "type": "string"
+            },
+            {
+              "name": "dueDate",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -260,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000003",
+      "name": "Create Tasks Table"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "tool_audit",
+        "columns": {
+          "column": [
+            {
+              "name": "occurredAt",
+              "type": "date"
+            },
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "requestId",
+              "type": "string"
+            },
+            {
+              "name": "toolName",
+              "type": "string"
+            },
+            {
+              "name": "proposedInput",
+              "type": "string"
+            },
+            {
+              "name": "result",
+              "type": "string"
+            },
+            {
+              "name": "error",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000004",
+      "name": "Create Tool Audit Table"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [\n  {\n    json: {\n      requestId: '00000000-0000-4000-8000-000000000101',\n      lastRequestId: '',\n      title: 'Confirm the project outcome',\n      description: 'Write one sentence that explains what success looks like for this project.',\n      status: 'todo',\n      priority: 'high',\n      dueDate: '2026-08-01T00:00:00.000Z'\n    }\n  },\n  {\n    json: {\n      requestId: '00000000-0000-4000-8000-000000000102',\n      lastRequestId: '',\n      title: 'Prepare the first-week plan',\n      description: 'Break the outcome into a short list of practical first-week actions.',\n      status: 'in_progress',\n      priority: 'medium',\n      dueDate: '2026-08-05T00:00:00.000Z'\n    }\n  },\n  {\n    json: {\n      requestId: '00000000-0000-4000-8000-000000000103',\n      lastRequestId: '',\n      title: 'Review the launch checklist',\n      description: 'Check the sample launch checklist and record anything that is missing.',\n      status: 'backlog',\n      priority: 'low',\n      dueDate: '2026-08-12T00:00:00.000Z'\n    }\n  },\n  { json: { requestId: '__setup_complete__', setupSentinel: true } }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000005",
+      "name": "Define Sample Tasks"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "requestId",
+              "condition": "eq",
+              "keyValue": "={{ $json.requestId }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000006",
+      "name": "Keep Missing Samples"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "40000000-0000-4000-8000-000000000009",
+              "leftValue": "={{ $json.setupSentinel !== true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000010",
+      "name": "Sample Needs Insert?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "requestId": "={{ $json.requestId }}",
+            "lastRequestId": "={{ $json.lastRequestId }}",
+            "title": "={{ $json.title }}",
+            "description": "={{ $json.description }}",
+            "status": "={{ $json.status }}",
+            "priority": "={{ $json.priority }}",
+            "dueDate": "={{ $json.dueDate }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "lastRequestId",
+              "displayName": "lastRequestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        20
+      ],
+      "id": "40000000-0000-4000-8000-000000000007",
+      "name": "Insert Missing Samples"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { ok: true, message: 'Local task tables are ready.' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        100
+      ],
+      "id": "40000000-0000-4000-8000-000000000011",
+      "name": "Setup Complete"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "pending_actions",
+        "columns": {
+          "column": [
+            {
+              "name": "actionId",
+              "type": "string"
+            },
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "actionType",
+              "type": "string"
+            },
+            {
+              "name": "proposedInput",
+              "type": "string"
+            },
+            {
+              "name": "confirmationText",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "expiresAt",
+              "type": "date"
+            },
+            {
+              "name": "consumedAt",
+              "type": "date"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        100
+      ],
+      "id": "50000000-0000-4000-8000-000000000001",
+      "name": "Create Pending Actions Table"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Setup": {
+      "main": [
+        [
+          {
+            "node": "Create Tasks Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Temporary Setup Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Tasks Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Tasks Table": {
+      "main": [
+        [
+          {
+            "node": "Create Tool Audit Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Tool Audit Table": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Actions Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Sample Tasks": {
+      "main": [
+        [
+          {
+            "node": "Keep Missing Samples",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Missing Samples": {
+      "main": [
+        [
+          {
+            "node": "Sample Needs Insert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sample Needs Insert?": {
+      "main": [
+        [
+          {
+            "node": "Insert Missing Samples",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Missing Samples": {
+      "main": [
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Pending Actions Table": {
+      "main": [
+        [
+          {
+            "node": "Define Sample Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 30,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "40000000-0000-4000-8000-000000000099",
+  "meta": {
+    "phase": 5,
+    "testedWithN8n": "2.30.5",
+    "confirmationState": "pending_actions"
+  },
+  "id": "phase4TaskSetup",
+  "tags": []
+}

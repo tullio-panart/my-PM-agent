@@ -1,0 +1,723 @@
+{
+  "id": "phase5ProposeTaskStatus",
+  "name": "31 - TOOL - Propose update_task_status",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Write-risk proposal only\nThis workflow validates the requested status and confirms that the task exists. It stores a five-minute proposal but **does not update `tasks`**.\n\nThe confirmation workflow later consumes the exact stored task ID and status.",
+        "height": 280,
+        "width": 640,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -820,
+        -320
+      ],
+      "id": "53000000-0000-4000-8000-000000000001",
+      "name": "Update proposal explanation"
+    },
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "taskId",
+              "type": "number"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-000000000002",
+      "name": "Tool Input"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const sessionId = typeof $json.sessionId === 'string' ? $json.sessionId.trim() : '';\nconst taskId = typeof $json.taskId === 'number' ? $json.taskId : Number($json.taskId);\nconst status = typeof $json.status === 'string' ? $json.status.trim().toLowerCase() : '';\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst statuses = ['backlog', 'todo', 'in_progress', 'blocked', 'done'];\nconst proposedInput = { taskId, status };\nlet error = null;\n\nif (!uuidPattern.test(sessionId)) {\n  error = { code: 'INVALID_SESSION', message: 'The status proposal needs a valid conversation session.' };\n} else if (!Number.isInteger(taskId) || taskId <= 0) {\n  error = { code: 'INVALID_TASK_ID', message: 'Task ID must be a positive whole number.' };\n} else if (!statuses.includes(status)) {\n  error = { code: 'INVALID_STATUS', message: `Status must be one of: ${statuses.join(', ')}.` };\n}\n\nreturn {\n  json: {\n    valid: error === null,\n    sessionId,\n    taskId,\n    status,\n    proposedInput,\n    ...(error ? { response: { ok: false, error } } : {})\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-000000000003",
+      "name": "Validate Status Proposal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "53000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -200,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-000000000004",
+      "name": "Proposal Is Valid?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Status Proposal').item.json.taskId }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": false
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        60,
+        0
+      ],
+      "id": "53000000-0000-4000-8000-000000000005",
+      "name": "Find Proposed Task",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const input = $('Validate Status Proposal').first().json;\nif (typeof $json.error === 'string' && $json.error !== '') {\n  return {\n    json: {\n      ...input,\n      ready: false,\n      response: {\n        ok: false,\n        error: {\n          code: 'TASK_DATA_UNAVAILABLE',\n          message: 'Local task data is not ready. Rerun local setup, then try again.'\n        }\n      }\n    }\n  };\n}\nif (!Number.isInteger($json.id)) {\n  return {\n    json: {\n      ...input,\n      ready: false,\n      response: {\n        ok: false,\n        error: {\n          code: 'TASK_NOT_FOUND',\n          message: `No local task exists with ID ${input.taskId}.`\n        }\n      }\n    }\n  };\n}\n\nconst actionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => { const random = Math.floor(Math.random() * 16); const value = character === 'x' ? random : (random & 0x3) | 0x8; return value.toString(16); });\nreturn {\n  json: {\n    ...input,\n    ready: true,\n    actionId,\n    actionType: 'update_task_status',\n    confirmationText: `CONFIRM ${actionId.replaceAll('-', '').slice(-8).toUpperCase()}`,\n    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),\n    task: {\n      id: $json.id,\n      title: String($json.title ?? ''),\n      currentStatus: String($json.status ?? '')\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "53000000-0000-4000-8000-000000000006",
+      "name": "Prepare Status Proposal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "53000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        580,
+        0
+      ],
+      "id": "53000000-0000-4000-8000-000000000007",
+      "name": "Task Is Ready?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "pending_actions",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sessionId",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare Status Proposal').item.json.sessionId }}"
+            },
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "superseded",
+            "consumedAt": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "actionId",
+              "displayName": "actionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "actionType",
+              "displayName": "actionType",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "confirmationText",
+              "displayName": "confirmationText",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "expiresAt",
+              "displayName": "expiresAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "date",
+              "removed": true
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        -80
+      ],
+      "id": "53000000-0000-4000-8000-000000000008",
+      "name": "Supersede Older Proposals",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "pending_actions",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "actionId": "={{ $('Prepare Status Proposal').item.json.actionId }}",
+            "sessionId": "={{ $('Prepare Status Proposal').item.json.sessionId }}",
+            "actionType": "update_task_status",
+            "proposedInput": "={{ JSON.stringify($('Prepare Status Proposal').item.json.proposedInput) }}",
+            "confirmationText": "={{ $('Prepare Status Proposal').item.json.confirmationText }}",
+            "status": "pending",
+            "expiresAt": "={{ $('Prepare Status Proposal').item.json.expiresAt }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "actionId",
+              "displayName": "actionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actionType",
+              "displayName": "actionType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "confirmationText",
+              "displayName": "confirmationText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "expiresAt",
+              "displayName": "expiresAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -80
+      ],
+      "id": "53000000-0000-4000-8000-000000000009",
+      "name": "Insert Pending Action",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const proposal = $('Prepare Status Proposal').first().json;\nif (!Number.isInteger($json.id)) {\n  return {\n    json: {\n      ...proposal,\n      response: {\n        ok: false,\n        error: {\n          code: 'CONFIRMATION_DATA_UNAVAILABLE',\n          message: 'The status proposal could not be saved. Rerun local setup, then try again.'\n        }\n      }\n    }\n  };\n}\nreturn {\n  json: {\n    ...proposal,\n    response: {\n      ok: true,\n      confirmationRequired: true,\n      action: {\n        type: 'update_task_status',\n        arguments: proposal.proposedInput,\n        taskTitle: proposal.task.title,\n        currentStatus: proposal.task.currentStatus\n      },\n      confirmation: {\n        phrase: proposal.confirmationText,\n        expiresAt: proposal.expiresAt\n      },\n      message: `No task changed. Ask the user to reply with exactly \"${proposal.confirmationText}\" within five minutes.`\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -80
+      ],
+      "id": "53000000-0000-4000-8000-00000000000a",
+      "name": "Shape Status Proposal"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const response = $json.response;\nconst proposedInput = $json.proposedInput ?? {};\nreturn {\n  json: {\n    occurredAt: new Date().toISOString(),\n    sessionId: String($json.sessionId ?? ''),\n    requestId: String($json.actionId ?? ''),\n    toolName: 'update_task_status_proposal',\n    proposedInput: JSON.stringify(proposedInput),\n    result: JSON.stringify(response),\n    error: response?.ok === false ? String(response.error?.message ?? 'Proposal failed') : '',\n    response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-00000000000b",
+      "name": "Prepare Audit"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tool_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "occurredAt": "={{ $json.occurredAt }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "requestId": "={{ $json.requestId }}",
+            "toolName": "={{ $json.toolName }}",
+            "proposedInput": "={{ $json.proposedInput }}",
+            "result": "={{ $json.result }}",
+            "error": "={{ $json.error }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "occurredAt",
+              "displayName": "occurredAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "toolName",
+              "displayName": "toolName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1880,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-00000000000c",
+      "name": "Write Tool Audit",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const prepared = $('Prepare Audit').item.json;\nconst response = { ...prepared.response };\nif (!Number.isInteger($json.id)) {\n  response.auditWarning = 'The proposal result could not be written to the local audit table.';\n}\nreturn { json: response };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        80
+      ],
+      "id": "53000000-0000-4000-8000-00000000000d",
+      "name": "Return Tool Result"
+    }
+  ],
+  "connections": {
+    "Tool Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Status Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Status Proposal": {
+      "main": [
+        [
+          {
+            "node": "Proposal Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposal Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Find Proposed Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Proposed Task": {
+      "main": [
+        [
+          {
+            "node": "Prepare Status Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Status Proposal": {
+      "main": [
+        [
+          {
+            "node": "Task Is Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Is Ready?": {
+      "main": [
+        [
+          {
+            "node": "Supersede Older Proposals",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supersede Older Proposals": {
+      "main": [
+        [
+          {
+            "node": "Insert Pending Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Pending Action": {
+      "main": [
+        [
+          {
+            "node": "Shape Status Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Status Proposal": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit": {
+      "main": [
+        [
+          {
+            "node": "Write Tool Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Tool Audit": {
+      "main": [
+        [
+          {
+            "node": "Return Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 20,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "ae5eaa55-5555-4555-8555-555555555555",
+  "meta": {
+    "phase": 5,
+    "testedWithN8n": "2.30.5",
+    "toolRisk": "write",
+    "taskMutation": "none",
+    "confirmation": "required-before-execution"
+  },
+  "tags": [],
+  "pinData": {}
+}

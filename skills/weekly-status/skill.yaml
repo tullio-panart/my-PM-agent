@@ -1,0 +1,4 @@
+id: weekly-status
+name: Weekly Status
+version: 1.0.0
+description: Produce a concise factual status from the tasks stored in the local project.

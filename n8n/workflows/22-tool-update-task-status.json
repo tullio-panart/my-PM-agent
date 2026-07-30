@@ -1,0 +1,589 @@
+{
+  "name": "22 - TOOL - update_task_status",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Narrow status-update worker\nThis workflow can change only one task's `status`. It cannot edit titles, descriptions, priorities, dates, or arbitrary columns.\n\n`requestId` makes a repeated update safe. Missing tasks and invalid statuses return structured errors and still produce an audit attempt.\n\n**Phase 5:** the AI cannot call this worker directly. Only `40 - CONFIRM - Task Write` dispatches it after consuming a valid, same-session confirmation.",
+        "height": 350,
+        "width": 590,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        -350
+      ],
+      "id": "43000000-0000-4000-8000-000000000001",
+      "name": "Update tool explanation"
+    },
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "requestId",
+              "type": "string"
+            },
+            {
+              "name": "taskId",
+              "type": "number"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -540,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000002",
+      "name": "Tool Input"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const clean = (value) => typeof value === 'string' ? value.trim() : '';\nconst sessionId = clean($json.sessionId);\nconst requestId = clean($json.requestId);\nconst taskId = Number($json.taskId);\nconst status = clean($json.status).toLowerCase();\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst statuses = ['backlog', 'todo', 'in_progress', 'blocked', 'done'];\nconst proposedInput = { sessionId, requestId, taskId, status };\nlet error = null;\n\nif (!uuidPattern.test(sessionId)) {\n  error = { code: 'INVALID_SESSION', message: 'The task request needs a valid conversation session.' };\n} else if (!uuidPattern.test(requestId)) {\n  error = { code: 'INVALID_REQUEST_ID', message: 'Updating a task requires a unique request ID.' };\n} else if (!Number.isInteger(taskId) || taskId < 1) {\n  error = { code: 'INVALID_TASK_ID', message: 'Task ID must be a positive whole number.' };\n} else if (!statuses.includes(status)) {\n  error = { code: 'INVALID_STATUS', message: `Status must be one of: ${statuses.join(', ')}.` };\n}\n\nreturn {\n  json: {\n    valid: error === null,\n    sessionId,\n    requestId,\n    taskId,\n    status,\n    proposedInput,\n    ...(error ? { response: { ok: false, error } } : {})\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000003",
+      "name": "Validate Update Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "43000000-0000-4000-8000-000000000004",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -60,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000005",
+      "name": "Input Is Valid?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Update Input').item.json.taskId }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": false
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        -20
+      ],
+      "id": "43000000-0000-4000-8000-000000000006",
+      "name": "Find Task",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $('Validate Update Input').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst dataError = rows.find((row) => typeof row.error === 'string' && row.error !== '');\n\nif (dataError) {\n  return [{\n    json: {\n      ...input,\n      shouldUpdate: false,\n      response: {\n        ok: false,\n        error: {\n          code: 'TASK_DATA_UNAVAILABLE',\n          message: 'Local task data is not ready. Run 10 - SETUP - Local Task Data, then try again.'\n        }\n      }\n    }\n  }];\n}\n\nconst existing = rows.find((row) => Number.isInteger(row.id));\nif (!existing) {\n  return [{\n    json: {\n      ...input,\n      shouldUpdate: false,\n      response: {\n        ok: false,\n        error: { code: 'TASK_NOT_FOUND', message: `No local task exists with ID ${input.taskId}.` }\n      }\n    }\n  }];\n}\n\nconst task = {\n  id: existing.id,\n  title: existing.title,\n  description: existing.description,\n  status: existing.status,\n  priority: existing.priority,\n  dueDate: existing.dueDate ?? null,\n  createdAt: existing.createdAt,\n  updatedAt: existing.updatedAt\n};\n\nif (String(existing.lastRequestId ?? '') === input.requestId) {\n  return [{\n    json: {\n      ...input,\n      shouldUpdate: false,\n      response: existing.status === input.status\n        ? { ok: true, updated: false, idempotent: true, task }\n        : {\n            ok: false,\n            error: {\n              code: 'IDEMPOTENCY_CONFLICT',\n              message: 'That request ID was already used for a different status change. Start a fresh request instead.'\n            }\n          }\n    }\n  }];\n}\n\nif (existing.status === input.status) {\n  return [{\n    json: {\n      ...input,\n      shouldUpdate: false,\n      response: { ok: true, updated: false, idempotent: true, task }\n    }\n  }];\n}\n\nreturn [{ json: { ...input, shouldUpdate: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -20
+      ],
+      "id": "43000000-0000-4000-8000-000000000007",
+      "name": "Decide Update Action"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "43000000-0000-4000-8000-000000000008",
+              "leftValue": "={{ $json.shouldUpdate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        -20
+      ],
+      "id": "43000000-0000-4000-8000-000000000009",
+      "name": "Update Row?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.taskId }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lastRequestId": "={{ $json.requestId }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "lastRequestId",
+              "displayName": "lastRequestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "date",
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        940,
+        -100
+      ],
+      "id": "43000000-0000-4000-8000-000000000010",
+      "name": "Update Task Status",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $('Decide Update Action').first().json;\nconst row = $input.first().json;\nif (typeof row.error === 'string' && row.error !== '') {\n  return [{\n    json: {\n      ...input,\n      response: {\n        ok: false,\n        error: { code: 'UPDATE_FAILED', message: 'The task status could not be updated. Check the local task table and try again.' }\n      }\n    }\n  }];\n}\nreturn [{\n  json: {\n    ...input,\n    response: {\n      ok: true,\n      updated: true,\n      idempotent: false,\n      task: {\n        id: row.id,\n        title: row.title,\n        description: row.description,\n        status: row.status,\n        priority: row.priority,\n        dueDate: row.dueDate ?? null,\n        createdAt: row.createdAt,\n        updatedAt: row.updatedAt\n      }\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        -100
+      ],
+      "id": "43000000-0000-4000-8000-000000000011",
+      "name": "Shape Update Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const response = $json.response;\nconst error = response?.ok === false ? String(response.error?.message ?? 'Tool failed') : '';\nreturn {\n  json: {\n    occurredAt: new Date().toISOString(),\n    sessionId: String($json.sessionId ?? ''),\n    requestId: String($json.requestId ?? ''),\n    toolName: 'update_task_status',\n    proposedInput: JSON.stringify($json.proposedInput ?? {}),\n    result: JSON.stringify(response),\n    error,\n    response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000012",
+      "name": "Prepare Audit"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tool_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "occurredAt": "={{ $json.occurredAt }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "requestId": "={{ $json.requestId }}",
+            "toolName": "={{ $json.toolName }}",
+            "proposedInput": "={{ $json.proposedInput }}",
+            "result": "={{ $json.result }}",
+            "error": "={{ $json.error }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "occurredAt",
+              "displayName": "occurredAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "toolName",
+              "displayName": "toolName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1660,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000013",
+      "name": "Write Tool Audit",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const prepared = $('Prepare Audit').item.json;\nconst response = { ...prepared.response };\nif (!Number.isInteger($json.id)) {\n  response.auditWarning = 'The tool result could not be written to the local audit table.';\n}\nreturn { json: response };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        80
+      ],
+      "id": "43000000-0000-4000-8000-000000000014",
+      "name": "Return Tool Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Tool Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Update Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Update Input": {
+      "main": [
+        [
+          {
+            "node": "Input Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Find Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Task": {
+      "main": [
+        [
+          {
+            "node": "Decide Update Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Update Action": {
+      "main": [
+        [
+          {
+            "node": "Update Row?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Row?": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Status": {
+      "main": [
+        [
+          {
+            "node": "Shape Update Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Update Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit": {
+      "main": [
+        [
+          {
+            "node": "Write Tool Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Tool Audit": {
+      "main": [
+        [
+          {
+            "node": "Return Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 20,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "43000000-0000-4000-8000-000000000099",
+  "meta": {
+    "phase": 5,
+    "testedWithN8n": "2.30.5",
+    "toolRisk": "write",
+    "agentConnection": "confirmation-executor-only"
+  },
+  "id": "phase4UpdateTaskStatus",
+  "tags": []
+}

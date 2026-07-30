@@ -1,0 +1,20 @@
+{
+  "pilotId": "PXX",
+  "teamId": "TXX",
+  "priorInvolvement": false,
+  "operatingSystem": "macos",
+  "browser": "Chrome",
+  "browserWidthPx": 1440,
+  "startedAt": "YYYY-MM-DDTHH:mm:ss.sssZ",
+  "finishedAt": "YYYY-MM-DDTHH:mm:ss.sssZ",
+  "outcome": "not_started",
+  "minutesToFirstClaudeResponse": null,
+  "preflightCompleted": false,
+  "customisedInterface": false,
+  "customisedSkill": false,
+  "demonstratedReadTool": false,
+  "demonstratedApprovedWrite": false,
+  "instructorInterventions": [],
+  "crossTeamHandoff": null,
+  "observerNotes": ""
+}

@@ -1,0 +1,378 @@
+{
+  "name": "20 - TOOL - list_tasks",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Read-only task tool\nThe input schema is deliberately small and visible. This workflow reads only the local `tasks` Data Table, returns only known task fields, and writes an audit record for success or failure.\n\nAllowed filters:\n- status: `all`, `backlog`, `todo`, `in_progress`, `blocked`, `done`\n- priority: `all`, `low`, `medium`, `high`",
+        "height": 320,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -650,
+        -310
+      ],
+      "id": "41000000-0000-4000-8000-000000000001",
+      "name": "Read tool explanation"
+    },
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "priority",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -520,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000002",
+      "name": "Tool Input"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const sessionId = typeof $json.sessionId === 'string' ? $json.sessionId.trim() : '';\nconst status = typeof $json.status === 'string' && $json.status.trim() !== ''\n  ? $json.status.trim().toLowerCase()\n  : 'all';\nconst priority = typeof $json.priority === 'string' && $json.priority.trim() !== ''\n  ? $json.priority.trim().toLowerCase()\n  : 'all';\nconst proposedInput = { sessionId, status, priority };\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst statuses = ['all', 'backlog', 'todo', 'in_progress', 'blocked', 'done'];\nconst priorities = ['all', 'low', 'medium', 'high'];\nlet error = null;\n\nif (!uuidPattern.test(sessionId)) {\n  error = { code: 'INVALID_SESSION', message: 'The task request needs a valid conversation session.' };\n} else if (!statuses.includes(status)) {\n  error = { code: 'INVALID_STATUS', message: `Status must be one of: ${statuses.join(', ')}.` };\n} else if (!priorities.includes(priority)) {\n  error = { code: 'INVALID_PRIORITY', message: `Priority must be one of: ${priorities.join(', ')}.` };\n}\n\nreturn {\n  json: {\n    valid: error === null,\n    sessionId,\n    status,\n    priority,\n    proposedInput,\n    ...(error ? { response: { ok: false, error } } : {})\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000003",
+      "name": "Validate List Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "41000000-0000-4000-8000-000000000004",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -40,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000005",
+      "name": "Input Is Valid?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": []
+        },
+        "returnAll": false,
+        "limit": 100,
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "ASC"
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "41000000-0000-4000-8000-000000000006",
+      "name": "Read Tasks",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $('Validate List Input').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst dataError = rows.find((row) => typeof row.error === 'string' && row.error !== '');\n\nif (dataError) {\n  return [{\n    json: {\n      ...input,\n      response: {\n        ok: false,\n        error: {\n          code: 'TASK_DATA_UNAVAILABLE',\n          message: 'Local task data is not ready. Run 10 - SETUP - Local Task Data, then try again.'\n        }\n      }\n    }\n  }];\n}\n\nconst statusOrder = { in_progress: 0, blocked: 1, todo: 2, backlog: 3, done: 4 };\nconst priorityOrder = { high: 0, medium: 1, low: 2 };\nconst tasks = rows\n  .filter((row) => Number.isInteger(row.id))\n  .filter((row) => input.status === 'all' || row.status === input.status)\n  .filter((row) => input.priority === 'all' || row.priority === input.priority)\n  .map((row) => ({\n    id: row.id,\n    title: String(row.title ?? ''),\n    description: String(row.description ?? ''),\n    status: String(row.status ?? ''),\n    priority: String(row.priority ?? ''),\n    dueDate: row.dueDate ?? null,\n    createdAt: row.createdAt,\n    updatedAt: row.updatedAt\n  }))\n  .sort((a, b) =>\n    (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99) ||\n    (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99) ||\n    a.id - b.id\n  );\n\nreturn [{\n  json: {\n    ...input,\n    response: {\n      ok: true,\n      filters: { status: input.status, priority: input.priority },\n      count: tasks.length,\n      tasks\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "41000000-0000-4000-8000-000000000007",
+      "name": "Shape List Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const response = $json.response;\nconst error = response?.ok === false ? String(response.error?.message ?? 'Tool failed') : '';\nreturn {\n  json: {\n    occurredAt: new Date().toISOString(),\n    sessionId: String($json.sessionId ?? ''),\n    requestId: '',\n    toolName: 'list_tasks',\n    proposedInput: JSON.stringify($json.proposedInput ?? {}),\n    result: JSON.stringify(response),\n    error,\n    response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000008",
+      "name": "Prepare Audit"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "tool_audit",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "occurredAt": "={{ $json.occurredAt }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "requestId": "={{ $json.requestId }}",
+            "toolName": "={{ $json.toolName }}",
+            "proposedInput": "={{ $json.proposedInput }}",
+            "result": "={{ $json.result }}",
+            "error": "={{ $json.error }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "occurredAt",
+              "displayName": "occurredAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "toolName",
+              "displayName": "toolName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000009",
+      "name": "Write Tool Audit",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const prepared = $('Prepare Audit').item.json;\nconst response = { ...prepared.response };\nif (!Number.isInteger($json.id)) {\n  response.auditWarning = 'The tool result could not be written to the local audit table.';\n}\nreturn { json: response };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        80
+      ],
+      "id": "41000000-0000-4000-8000-000000000010",
+      "name": "Return Tool Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Tool Input": {
+      "main": [
+        [
+          {
+            "node": "Validate List Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate List Input": {
+      "main": [
+        [
+          {
+            "node": "Input Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Read Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tasks": {
+      "main": [
+        [
+          {
+            "node": "Shape List Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape List Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit": {
+      "main": [
+        [
+          {
+            "node": "Write Tool Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Tool Audit": {
+      "main": [
+        [
+          {
+            "node": "Return Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 20,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "41000000-0000-4000-8000-000000000099",
+  "meta": {
+    "phase": 4,
+    "testedWithN8n": "2.30.5",
+    "toolRisk": "read"
+  },
+  "id": "phase4ListTasks",
+  "tags": []
+}

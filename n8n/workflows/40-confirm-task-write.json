@@ -1,0 +1,1050 @@
+{
+  "id": "phase5ConfirmTaskWrite",
+  "name": "40 - CONFIRM - Task Write",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Exact, expiring, single-use\nThe main workflow calls this only for a message matching `CONFIRM XXXXXXXX` exactly.\n\nThis workflow checks the browser session, exact phrase, proposal status, and five-minute expiry. It conditionally marks the proposal consumed **before** calling one reviewed write worker. A retry cannot reuse it.",
+        "height": 300,
+        "width": 700,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -360
+      ],
+      "id": "54000000-0000-4000-8000-000000000001",
+      "name": "Confirmation explanation"
+    },
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sessionId",
+              "type": "string"
+            },
+            {
+              "name": "confirmationText",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -820,
+        80
+      ],
+      "id": "54000000-0000-4000-8000-000000000002",
+      "name": "Confirmation Input"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const sessionId = typeof $json.sessionId === 'string' ? $json.sessionId.trim() : '';\nconst confirmationText =\n  typeof $json.confirmationText === 'string' ? $json.confirmationText.trim() : '';\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst exactPattern = /^CONFIRM [A-F0-9]{8}$/;\nlet error = null;\nif (!uuidPattern.test(sessionId)) {\n  error = {\n    code: 'INVALID_SESSION',\n    message: 'The confirmation needs the same valid conversation session as the proposal.'\n  };\n} else if (!exactPattern.test(confirmationText)) {\n  error = {\n    code: 'INVALID_CONFIRMATION',\n    message: 'That is not an exact confirmation phrase. Ask for a new proposal and copy its phrase exactly.'\n  };\n}\nreturn {\n  json: {\n    valid: error === null,\n    sessionId,\n    confirmationText,\n    ...(error ? { response: { ok: false, error } } : {})\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        80
+      ],
+      "id": "54000000-0000-4000-8000-000000000003",
+      "name": "Validate Confirmation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "54000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -300,
+        80
+      ],
+      "id": "54000000-0000-4000-8000-000000000004",
+      "name": "Confirmation Is Valid?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "pending_actions",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sessionId",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Confirmation').item.json.sessionId }}"
+            },
+            {
+              "keyName": "confirmationText",
+              "condition": "eq",
+              "keyValue": "={{ $('Validate Confirmation').item.json.confirmationText }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": false
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -40,
+        0
+      ],
+      "id": "54000000-0000-4000-8000-000000000005",
+      "name": "Find Exact Proposal",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const input = $('Validate Confirmation').first().json;\nconst row = $json;\nlet response = null;\nlet ready = false;\nlet expired = false;\nlet proposedInput = null;\n\nif (typeof row.error === 'string' && row.error !== '') {\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_DATA_UNAVAILABLE',\n      message: 'Confirmation data is not ready. Rerun local setup, then ask for a new proposal.'\n    }\n  };\n} else if (!Number.isInteger(row.id)) {\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_NOT_FOUND',\n      message: 'That confirmation does not match a proposal in this conversation. Ask for a new proposal.'\n    }\n  };\n} else if (row.status === 'consumed') {\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_ALREADY_USED',\n      message: 'That confirmation was already used. Ask for a new proposal before another change.'\n    }\n  };\n} else if (row.status === 'superseded') {\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_SUPERSEDED',\n      message: 'A newer proposal replaced that confirmation. Use the newest phrase instead.'\n    }\n  };\n} else if (row.status !== 'pending') {\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_UNAVAILABLE',\n      message: 'That confirmation is no longer available. Ask for a new proposal.'\n    }\n  };\n} else if (Date.parse(row.expiresAt) <= Date.now()) {\n  expired = true;\n  response = {\n    ok: false,\n    error: {\n      code: 'CONFIRMATION_EXPIRED',\n      message: 'That confirmation expired. Ask for a new proposal and confirm it within five minutes.'\n    }\n  };\n} else {\n  try {\n    proposedInput = JSON.parse(row.proposedInput);\n  } catch {\n    response = {\n      ok: false,\n      error: {\n        code: 'INVALID_STORED_PROPOSAL',\n        message: 'The stored proposal is invalid. Ask for a new proposal.'\n      }\n    };\n  }\n  if (proposedInput && ['create_task', 'update_task_status'].includes(row.actionType)) {\n    ready = true;\n  } else if (!response) {\n    response = {\n      ok: false,\n      error: {\n        code: 'INVALID_STORED_PROPOSAL',\n        message: 'The stored proposal is invalid. Ask for a new proposal.'\n      }\n    };\n  }\n}\n\nreturn {\n  json: {\n    ready,\n    expired,\n    sessionId: input.sessionId,\n    confirmationText: input.confirmationText,\n    actionId: String(row.actionId ?? ''),\n    actionType: String(row.actionType ?? ''),\n    proposedInput,\n    response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "54000000-0000-4000-8000-000000000006",
+      "name": "Evaluate Proposal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "54000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "54000000-0000-4000-8000-000000000007",
+      "name": "Proposal Is Ready?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "54000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.expired }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        740,
+        180
+      ],
+      "id": "54000000-0000-4000-8000-000000000008",
+      "name": "Proposal Expired?"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "pending_actions",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "actionId",
+              "condition": "eq",
+              "keyValue": "={{ $('Evaluate Proposal').item.json.actionId }}"
+            },
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "expired",
+            "consumedAt": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "actionId",
+              "displayName": "actionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "actionType",
+              "displayName": "actionType",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "confirmationText",
+              "displayName": "confirmationText",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "expiresAt",
+              "displayName": "expiresAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "date",
+              "removed": true
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        100
+      ],
+      "id": "54000000-0000-4000-8000-000000000009",
+      "name": "Mark Proposal Expired",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "return { json: $('Evaluate Proposal').first().json.response };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        100
+      ],
+      "id": "54000000-0000-4000-8000-00000000000a",
+      "name": "Return Expired Result"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "pending_actions",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "actionId",
+              "condition": "eq",
+              "keyValue": "={{ $('Evaluate Proposal').item.json.actionId }}"
+            },
+            {
+              "keyName": "sessionId",
+              "condition": "eq",
+              "keyValue": "={{ $('Evaluate Proposal').item.json.sessionId }}"
+            },
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "pending"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "consumed",
+            "consumedAt": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "actionId",
+              "displayName": "actionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "actionType",
+              "displayName": "actionType",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "proposedInput",
+              "displayName": "proposedInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "confirmationText",
+              "displayName": "confirmationText",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "expiresAt",
+              "displayName": "expiresAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": false,
+              "canBeUsedToMatch": true,
+              "type": "date",
+              "removed": true
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "date"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "dryRun": false
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        -180
+      ],
+      "id": "54000000-0000-4000-8000-00000000000b",
+      "name": "Consume Exact Proposal",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const proposal = $('Evaluate Proposal').first().json;\nif (!Number.isInteger($json.id)) {\n  return {\n    json: {\n      consumed: false,\n      response: {\n        ok: false,\n        error: {\n          code: 'CONFIRMATION_ALREADY_USED',\n          message: 'That confirmation was already consumed by another request. Ask for a new proposal.'\n        }\n      }\n    }\n  };\n}\nreturn { json: { ...proposal, consumed: true } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        -180
+      ],
+      "id": "54000000-0000-4000-8000-00000000000c",
+      "name": "Verify Single Use"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "54000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.consumed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1260,
+        -180
+      ],
+      "id": "54000000-0000-4000-8000-00000000000d",
+      "name": "Proposal Was Consumed?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "54000000-0000-4000-8000-00000000000f",
+              "leftValue": "={{ $json.actionType === 'create_task' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        -260
+      ],
+      "id": "54000000-0000-4000-8000-00000000000e",
+      "name": "Create Task Action?"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "phase4CreateTask",
+          "mode": "list",
+          "cachedResultName": "21 - TOOL - create_task"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Verify Single Use').item.json.sessionId }}",
+            "requestId": "={{ $('Verify Single Use').item.json.actionId }}",
+            "title": "={{ $('Verify Single Use').item.json.proposedInput.title }}",
+            "description": "={{ $('Verify Single Use').item.json.proposedInput.description }}",
+            "status": "={{ $('Verify Single Use').item.json.proposedInput.status }}",
+            "priority": "={{ $('Verify Single Use').item.json.proposedInput.priority }}",
+            "dueDate": "={{ $('Verify Single Use').item.json.proposedInput.dueDate }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1780,
+        -360
+      ],
+      "id": "54000000-0000-4000-8000-00000000000f",
+      "name": "Execute Confirmed Create"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "phase4UpdateTaskStatus",
+          "mode": "list",
+          "cachedResultName": "22 - TOOL - update_task_status"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Verify Single Use').item.json.sessionId }}",
+            "requestId": "={{ $('Verify Single Use').item.json.actionId }}",
+            "taskId": "={{ $('Verify Single Use').item.json.proposedInput.taskId }}",
+            "status": "={{ $('Verify Single Use').item.json.proposedInput.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "taskId",
+              "displayName": "taskId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1780,
+        -140
+      ],
+      "id": "54000000-0000-4000-8000-000000000010",
+      "name": "Execute Confirmed Update"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const proposal = $('Verify Single Use').first().json;\nif ($json.ok !== true) {\n  return {\n    json: {\n      ok: false,\n      actionType: proposal.actionType,\n      error: $json.error ?? {\n        code: 'TASK_WRITE_FAILED',\n        message: 'The confirmed task change failed. Ask for a new proposal before retrying.'\n      }\n    }\n  };\n}\nreturn {\n  json: {\n    ok: true,\n    confirmed: true,\n    actionType: proposal.actionType,\n    task: $json.task\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        -260
+      ],
+      "id": "54000000-0000-4000-8000-000000000011",
+      "name": "Shape Confirmed Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "return { json: $json.response ?? $json };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ],
+      "id": "54000000-0000-4000-8000-000000000012",
+      "name": "Return Rejection"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "return { json: $json };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        40
+      ],
+      "id": "54000000-0000-4000-8000-000000000013",
+      "name": "Return Confirmation Result"
+    }
+  ],
+  "connections": {
+    "Confirmation Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Find Exact Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Exact Proposal": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Proposal": {
+      "main": [
+        [
+          {
+            "node": "Proposal Is Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposal Is Ready?": {
+      "main": [
+        [
+          {
+            "node": "Consume Exact Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Proposal Expired?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposal Expired?": {
+      "main": [
+        [
+          {
+            "node": "Mark Proposal Expired",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Proposal Expired": {
+      "main": [
+        [
+          {
+            "node": "Return Expired Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Expired Result": {
+      "main": [
+        [
+          {
+            "node": "Return Confirmation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consume Exact Proposal": {
+      "main": [
+        [
+          {
+            "node": "Verify Single Use",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Single Use": {
+      "main": [
+        [
+          {
+            "node": "Proposal Was Consumed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposal Was Consumed?": {
+      "main": [
+        [
+          {
+            "node": "Create Task Action?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Task Action?": {
+      "main": [
+        [
+          {
+            "node": "Execute Confirmed Create",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Confirmed Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Confirmed Create": {
+      "main": [
+        [
+          {
+            "node": "Shape Confirmed Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Confirmed Update": {
+      "main": [
+        [
+          {
+            "node": "Shape Confirmed Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Confirmed Result": {
+      "main": [
+        [
+          {
+            "node": "Return Confirmation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Rejection": {
+      "main": [
+        [
+          {
+            "node": "Return Confirmation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 25,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "versionId": "ae5Cfae5-5555-4555-8555-555555555555",
+  "meta": {
+    "phase": 5,
+    "testedWithN8n": "2.30.5",
+    "confirmation": {
+      "sessionBound": true,
+      "exactArguments": true,
+      "expiresMinutes": 5,
+      "singleUse": true,
+      "consumeBeforeWrite": true
+    },
+    "allowedActions": [
+      "create_task",
+      "update_task_status"
+    ]
+  },
+  "tags": [],
+  "pinData": {}
+}
