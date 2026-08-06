@@ -55,8 +55,8 @@ its workflow and safety tests are ready.
    own stable `agent_config` row so skill bundles do not leak between roles.
 6. In `apps/chat/config/agents.json`, set that agent's `workflowPath` and change
    `status` from `coming-soon` to `active`.
-7. Run `node scripts/validate-workflows.mjs`, the gateway tests, and
-   `./scripts/test-phase5.sh`.
+7. Run `node scripts/validate-workflows.mjs`, then manually exercise valid,
+   invalid, timeout, and safe-write paths in a throwaway local project.
 8. Restart with `./scripts/run-local.sh restart`.
 9. Verify the new button starts an isolated conversation and reaches only its
    intended webhook.

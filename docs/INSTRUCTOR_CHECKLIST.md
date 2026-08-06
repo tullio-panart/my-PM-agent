@@ -112,5 +112,7 @@ Do not record API keys, passwords, full logs, or sensitive task content.
 - [ ] Confirm no API keys were committed.
 - [ ] Ask teams to stop the local stack.
 - [ ] Confirm customisations were pushed and local data was backed up when needed.
+- [ ] Remind learners that backups contain plaintext chat transcripts and must
+  stay private.
 - [ ] Revoke temporary instructor credentials.
 - [ ] Collect intervention logs and prioritise recurring friction for the learner-testing phase.

@@ -80,12 +80,12 @@ The interface displays configuration values and agent replies as plain text. It 
 The browser assets are in `apps/chat/public/`. The small TypeScript gateway is
 in `apps/chat/src/`.
 
-Run its contract tests with:
+Install its locked dependencies and check that it builds with:
 
 ```bash
 cd apps/chat
 npm ci
-npm test
+npm run build
 ```
 
 Rebuild and restart after changing TypeScript:

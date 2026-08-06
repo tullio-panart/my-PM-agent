@@ -105,7 +105,8 @@ The current local release includes:
 - A reusable agent registry with one active role and visible future roles.
 - A visual n8n agent.
 - Claude API integration.
-- Browser-session conversation memory.
+- Durable local SQLite chat history, search, and bounded restart-safe
+  per-conversation memory.
 - Local task storage.
 - `list_tasks`, `create_task`, and `update_task_status`.
 - Markdown-based skills.

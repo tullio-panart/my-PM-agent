@@ -57,6 +57,7 @@
   const LARGE_PASTE_THRESHOLD = 4_000;
 
   const elements = {
+    agentPanel: document.querySelector(".agent-panel"),
     agentInitials: document.querySelector("#agent-initials"),
     agentList: document.querySelector("#agent-list"),
     agentName: document.querySelector("#agent-name"),
@@ -66,10 +67,19 @@
     characterCount: document.querySelector("#character-count"),
     conversation: document.querySelector("#conversation"),
     conversationAgentName: document.querySelector("#conversation-agent-name"),
+    conversationTitleText: document.querySelector("#conversation-title-text"),
     documentList: document.querySelector("#document-list"),
     documentStatus: document.querySelector("#document-status"),
     fileInput: document.querySelector("#file-input"),
     form: document.querySelector("#chat-form"),
+    historyButton: document.querySelector("#history-button"),
+    historyClose: document.querySelector("#history-close"),
+    historyList: document.querySelector("#history-list"),
+    historyMore: document.querySelector("#history-more"),
+    historyNew: document.querySelector("#history-new"),
+    historySearchForm: document.querySelector("#history-search-form"),
+    historySearchInput: document.querySelector("#history-search-input"),
+    historyStatus: document.querySelector("#history-status"),
     input: document.querySelector("#message-input"),
     mobileAgentInitials: document.querySelector("#mobile-agent-initials"),
     pasteButton: document.querySelector("#paste-button"),
@@ -95,6 +105,13 @@
   let activeAgentId = "project-manager";
   let uploadedDocuments = [];
   let sessionDocuments = [];
+  let conversations = [];
+  let nextConversationCursor = null;
+  let currentMessages = [];
+  let nextMessageBefore = null;
+  let activeConversationTitle = "New conversation";
+  let pendingRefreshTimer = null;
+  const narrowLayout = window.matchMedia("(max-width: 50rem)");
 
   function cleanText(value, fallback, maximumLength) {
     if (typeof value !== "string") {
@@ -213,6 +230,7 @@
     elements.agentName.textContent = name;
     elements.agentSubtitle.textContent = description;
     elements.conversationAgentName.textContent = name;
+    elements.conversationTitleText.textContent = activeConversationTitle;
     elements.input.setAttribute("aria-label", `Message ${name}`);
     elements.input.placeholder = `What should the ${name} do?`;
 
@@ -245,7 +263,8 @@
       typeof documentItem.pageCount === "number"
         ? ` · ${documentItem.pageCount} pages`
         : "";
-    return `${documentItem.wordCount.toLocaleString()} words${pageText}`;
+    const expiryText = documentItem.expired ? " · Expired" : "";
+    return `${documentItem.wordCount.toLocaleString()} words${pageText}${expiryText}`;
   }
 
   function documentTypeLabel(documentItem) {
@@ -258,6 +277,10 @@
   function createSentAttachment(documentItem) {
     const attachment = document.createElement("div");
     attachment.className = "sent-attachment";
+    attachment.classList.toggle(
+      "sent-attachment--expired",
+      documentItem.expired === true,
+    );
     attachment.setAttribute(
       "aria-label",
       `Attached ${documentItem.name}, ${documentMetadata(documentItem)}`,
@@ -298,9 +321,15 @@
     return attachment;
   }
 
-  function addMessage(kind, text, attachments = []) {
+  function addMessage(kind, text, attachments = [], options = {}) {
     const wrapper = document.createElement("article");
     wrapper.className = `message message--${kind}`;
+    if (["pending", "failed", "interrupted"].includes(options.status)) {
+      wrapper.classList.add(`message--${options.status}`);
+    }
+    if (options.id) {
+      wrapper.dataset.messageId = options.id;
+    }
 
     const body = document.createElement("div");
     body.className = "message__body";
@@ -324,9 +353,22 @@
       body.append(attachmentList);
     }
     body.append(copy);
+    if (["pending", "failed", "interrupted"].includes(options.status)) {
+      const status = document.createElement("p");
+      status.className = "message__status";
+      status.textContent =
+        options.status === "pending"
+          ? "Reply in progress…"
+          : options.status === "interrupted"
+          ? "Reply interrupted — send this again as a new message."
+          : "Reply failed — send this again to retry.";
+      body.append(status);
+    }
     wrapper.append(createAvatar(kind), body);
     elements.conversation.append(wrapper);
-    scrollConversation();
+    if (options.scroll !== false) {
+      scrollConversation();
+    }
     return wrapper;
   }
 
@@ -385,7 +427,7 @@
       retry.textContent = "Try again";
       retry.addEventListener("click", () => {
         alert.remove();
-        void sendMessage(retryRequest.message, false, retryRequest.documents);
+        void sendMessage(retryRequest.message, true, retryRequest.documents);
       });
       content.append(retry);
     }
@@ -446,6 +488,341 @@
     }
   }
 
+  function relativeTime(value) {
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) {
+      return "Saved locally";
+    }
+    const seconds = Math.round((timestamp - Date.now()) / 1_000);
+    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    if (Math.abs(seconds) < 60) {
+      return formatter.format(seconds, "second");
+    }
+    const minutes = Math.round(seconds / 60);
+    if (Math.abs(minutes) < 60) {
+      return formatter.format(minutes, "minute");
+    }
+    const hours = Math.round(minutes / 60);
+    if (Math.abs(hours) < 24) {
+      return formatter.format(hours, "hour");
+    }
+    return formatter.format(Math.round(hours / 24), "day");
+  }
+
+  function syncHistoryPanelAccess() {
+    elements.agentPanel.inert =
+      narrowLayout.matches &&
+      !elements.agentPanel.classList.contains("agent-panel--open");
+  }
+
+  function setHistoryOpen(isOpen) {
+    elements.agentPanel.classList.toggle("agent-panel--open", isOpen);
+    elements.historyButton.setAttribute("aria-expanded", String(isOpen));
+    syncHistoryPanelAccess();
+    if (isOpen) {
+      elements.historySearchInput.focus();
+    } else if (document.activeElement === elements.historyClose) {
+      elements.historyButton.focus();
+    }
+  }
+
+  function renderHistoryList(items = conversations, isSearch = false) {
+    elements.historyList.replaceChildren();
+    if (items.length === 0) {
+      elements.historyStatus.textContent = isSearch
+        ? "No saved chats match that search."
+        : "No saved chats yet.";
+      return;
+    }
+    elements.historyStatus.textContent = isSearch
+      ? `${items.length} matching message${items.length === 1 ? "" : "s"}`
+      : "Saved on this computer";
+    for (const item of items) {
+      if (isSearch) {
+        const result = document.createElement("button");
+        result.className = "history-result";
+        result.type = "button";
+
+        const title = document.createElement("span");
+        title.className = "history-result__title";
+        title.textContent = item.conversationTitle;
+        const snippet = document.createElement("span");
+        snippet.className = "history-result__snippet";
+        snippet.textContent = item.snippet;
+        result.append(title, snippet);
+        result.addEventListener("click", () => {
+          void loadConversation(item.conversationId, item.messageId);
+        });
+        elements.historyList.append(result);
+        continue;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "history-item";
+      wrapper.classList.toggle("history-item--active", item.id === sessionId);
+      wrapper.setAttribute("role", "listitem");
+
+      const open = document.createElement("button");
+      open.className = "history-item__open";
+      open.type = "button";
+      open.setAttribute("aria-current", item.id === sessionId ? "true" : "false");
+      const title = document.createElement("span");
+      title.className = "history-item__title";
+      title.textContent = item.title;
+      const meta = document.createElement("span");
+      meta.className = "history-item__meta";
+      meta.textContent = `${relativeTime(item.updatedAt)} · ${item.messageCount} message${item.messageCount === 1 ? "" : "s"}`;
+      open.append(title, meta);
+      open.addEventListener("click", () => {
+        void loadConversation(item.id);
+      });
+
+      const actions = document.createElement("span");
+      actions.className = "history-item__actions";
+      const rename = document.createElement("button");
+      rename.className = "history-item__action";
+      rename.type = "button";
+      rename.textContent = "✎";
+      rename.setAttribute("aria-label", `Rename ${item.title}`);
+      rename.addEventListener("click", () => {
+        void renameConversation(item);
+      });
+      const remove = document.createElement("button");
+      remove.className = "history-item__action";
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `Delete ${item.title}`);
+      remove.addEventListener("click", () => {
+        void deleteConversation(item);
+      });
+      actions.append(rename, remove);
+      wrapper.append(open, actions);
+      elements.historyList.append(wrapper);
+    }
+  }
+
+  async function loadConversationList({ append = false } = {}) {
+    const cursor = append && nextConversationCursor
+      ? `&cursor=${encodeURIComponent(nextConversationCursor)}`
+      : "";
+    const response = await fetch(`/api/conversations?limit=50${cursor}`, {
+      headers: { Accept: "application/json" },
+    });
+    const body = await parseResponse(response, "Saved chats could not be loaded.");
+    const received = Array.isArray(body?.conversations) ? body.conversations : [];
+    conversations = append ? [...conversations, ...received] : received;
+    nextConversationCursor = body?.nextCursor ?? null;
+    elements.historyMore.hidden = !nextConversationCursor;
+    renderHistoryList();
+    return conversations;
+  }
+
+  function discardPendingDocuments(previousSessionId) {
+    const documents = sessionDocuments;
+    uploadedDocuments = [];
+    sessionDocuments = [];
+    renderDocuments();
+    for (const documentItem of documents) {
+      void fetch(
+        `/api/documents/${encodeURIComponent(documentItem.id)}?sessionId=${encodeURIComponent(previousSessionId)}`,
+        { method: "DELETE" },
+      );
+    }
+  }
+
+  function renderStoredConversation(targetMessageId) {
+    if (pendingRefreshTimer !== null) {
+      window.clearTimeout(pendingRefreshTimer);
+      pendingRefreshTimer = null;
+    }
+    elements.conversation.replaceChildren();
+    if (nextMessageBefore) {
+      const older = document.createElement("button");
+      older.className = "load-older";
+      older.type = "button";
+      older.textContent = "Load earlier messages";
+      older.addEventListener("click", () => {
+        void loadOlderMessages();
+      });
+      elements.conversation.append(older);
+    }
+    if (currentMessages.length === 0) {
+      addMessage("agent", config.welcomeMessage, [], { scroll: false });
+      elements.suggestions.hidden = false;
+    } else {
+      elements.suggestions.hidden = true;
+      for (const message of currentMessages) {
+        addMessage(
+          message.role === "assistant" ? "agent" : "user",
+          message.content,
+          message.attachments ?? [],
+          {
+            id: message.id,
+            status: message.status,
+            scroll: false,
+          },
+        );
+      }
+    }
+    const target = targetMessageId
+      ? elements.conversation.querySelector(
+          `[data-message-id="${CSS.escape(targetMessageId)}"]`,
+        )
+      : null;
+    if (target) {
+      target.classList.add("message--target");
+      target.scrollIntoView({ block: "center" });
+      elements.conversation.focus();
+    } else {
+      elements.conversation.scrollTop = elements.conversation.scrollHeight;
+    }
+    if (currentMessages.some((message) => message.status === "pending")) {
+      const expectedSessionId = sessionId;
+      pendingRefreshTimer = window.setTimeout(() => {
+        if (sessionId === expectedSessionId && !requestInProgress) {
+          void loadConversation(sessionId, undefined, true).catch(() => {});
+        }
+      }, 1_500);
+    }
+  }
+
+  async function loadConversation(id, targetMessageId, allowBusy = false) {
+    if (!allowBusy && (requestInProgress || documentRequestInProgress)) {
+      return;
+    }
+    const response = await fetch(
+      `/api/conversations/${encodeURIComponent(id)}?limit=100`,
+      { headers: { Accept: "application/json" } },
+    );
+    const body = await parseResponse(response, "That saved chat could not be loaded.");
+    const previousSessionId = sessionId;
+    if (previousSessionId !== id && sessionDocuments.length > 0) {
+      discardPendingDocuments(previousSessionId);
+    }
+    sessionId = body.conversation.id;
+    storeSession(sessionId);
+    activeConversationTitle = body.conversation.title;
+    const availableAgent = agents.find(
+      (agent) => agent.id === body.conversation.agentId && agent.status === "active",
+    );
+    if (availableAgent) {
+      activeAgentId = availableAgent.id;
+    }
+    currentMessages = Array.isArray(body.messages) ? body.messages : [];
+    nextMessageBefore = body.nextBefore ?? null;
+    elements.input.value = "";
+    updateCharacterCount();
+    resizeInput();
+    applyAgentIdentity();
+    renderAgentList();
+    renderSuggestions();
+    renderStoredConversation(targetMessageId);
+    renderHistoryList();
+    setHistoryOpen(false);
+    elements.input.focus();
+  }
+
+  async function loadOlderMessages() {
+    if (!nextMessageBefore) {
+      return;
+    }
+    const response = await fetch(
+      `/api/conversations/${encodeURIComponent(sessionId)}?limit=100&before=${encodeURIComponent(nextMessageBefore)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    const body = await parseResponse(response, "Earlier messages could not be loaded.");
+    currentMessages = [...(body.messages ?? []), ...currentMessages];
+    nextMessageBefore = body.nextBefore ?? null;
+    renderStoredConversation();
+    elements.conversation.scrollTop = 0;
+  }
+
+  async function createConversation(agentId = activeAgentId) {
+    if (requestInProgress || documentRequestInProgress) {
+      return;
+    }
+    const previousSessionId = sessionId;
+    if (sessionDocuments.length > 0) {
+      discardPendingDocuments(previousSessionId);
+    }
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId }),
+    });
+    const body = await parseResponse(response, "A new chat could not be created.");
+    await loadConversationList();
+    await loadConversation(body.conversation.id);
+    elements.requestStatus.textContent = "New conversation started";
+  }
+
+  async function renameConversation(conversation) {
+    const supplied = window.prompt("Rename this conversation", conversation.title);
+    if (supplied === null) {
+      return;
+    }
+    const title = supplied.replace(/\s+/g, " ").trim();
+    if (!title || title.length > 80) {
+      elements.historyStatus.textContent = "Use a title from 1 to 80 characters.";
+      return;
+    }
+    const response = await fetch(
+      `/api/conversations/${encodeURIComponent(conversation.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    );
+    await parseResponse(response, "That chat could not be renamed.");
+    if (conversation.id === sessionId) {
+      activeConversationTitle = title;
+      elements.conversationTitleText.textContent = title;
+    }
+    await loadConversationList();
+  }
+
+  async function deleteConversation(conversation) {
+    if (!window.confirm(`Permanently delete “${conversation.title}” from this computer?`)) {
+      return;
+    }
+    const response = await fetch(
+      `/api/conversations/${encodeURIComponent(conversation.id)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      await parseResponse(response, "That chat could not be deleted.");
+    }
+    const deletedCurrent = conversation.id === sessionId;
+    await loadConversationList();
+    if (deletedCurrent) {
+      const replacement = conversations.find(
+        (candidate) => candidate.agentId === activeAgentId,
+      ) ?? conversations[0];
+      if (replacement) {
+        await loadConversation(replacement.id);
+      } else {
+        await createConversation(activeAgentId);
+      }
+    }
+  }
+
+  async function searchConversations(query) {
+    const cleaned = query.trim();
+    if (!cleaned) {
+      renderHistoryList();
+      elements.historyMore.hidden = !nextConversationCursor;
+      return;
+    }
+    const response = await fetch(
+      `/api/conversations/search?q=${encodeURIComponent(cleaned)}&limit=50`,
+      { headers: { Accept: "application/json" } },
+    );
+    const body = await parseResponse(response, "Saved chats could not be searched.");
+    elements.historyMore.hidden = true;
+    renderHistoryList(Array.isArray(body.results) ? body.results : [], true);
+  }
+
   function renderAgentList() {
     elements.agentList.replaceChildren();
     for (const agent of agents) {
@@ -486,10 +863,10 @@
             return;
           }
           activeAgentId = agent.id;
-          startNewConversation();
           applyAgentIdentity();
           renderAgentList();
           renderSuggestions();
+          void createConversation(agent.id);
         });
       }
       elements.agentList.append(button);
@@ -563,11 +940,17 @@
     elements.input.disabled = controlsBusy;
     elements.sendButton.disabled = controlsBusy;
     elements.resetButton.disabled = controlsBusy;
+    elements.historyNew.disabled = controlsBusy;
+    elements.historyMore.disabled = controlsBusy;
+    elements.historySearchInput.disabled = controlsBusy;
     elements.attachmentMenuButton.disabled = controlsBusy;
     elements.uploadButton.disabled = controlsBusy;
     elements.pasteButton.disabled = controlsBusy;
     for (const suggestion of elements.suggestionList.querySelectorAll("button")) {
       suggestion.disabled = controlsBusy;
+    }
+    for (const historyControl of elements.historyList.querySelectorAll("button")) {
+      historyControl.disabled = controlsBusy;
     }
     elements.sendButtonLabel.textContent = isBusy ? "Working" : "Send";
     elements.requestStatus.textContent = isBusy
@@ -743,12 +1126,14 @@
     resizeInput();
     setBusy(true);
     loadingMessage = addLoadingMessage();
+    const requestId = createSessionId();
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          requestId,
           sessionId,
           agentId: activeAgentId,
           message,
@@ -775,9 +1160,17 @@
       loadingMessage.remove();
       loadingMessage = null;
       addMessage("agent", responseBody.reply.trim());
+      await loadConversationList();
+      await loadConversation(sessionId, undefined, true);
     } catch (error) {
       loadingMessage?.remove();
       loadingMessage = null;
+      try {
+        await loadConversationList();
+        await loadConversation(sessionId, undefined, true);
+      } catch {
+        // Keep the visible optimistic message when history refresh also fails.
+      }
       addError(
         error instanceof Error
           ? error.message
@@ -805,28 +1198,18 @@
   }
 
   function startNewConversation() {
-    const previousSessionId = sessionId;
-    const previousDocuments = sessionDocuments;
-    sessionId = createSessionId();
-    storeSession(sessionId);
-    uploadedDocuments = [];
-    sessionDocuments = [];
-    renderDocuments();
     elements.fileInput.value = "";
     elements.pastedName.value = "";
     elements.pastedText.value = "";
     elements.documentStatus.textContent = "";
     setAttachmentMenuOpen(false);
-    renderNewConversation();
-    elements.requestStatus.textContent = "New conversation started";
-    elements.input.focus();
-
-    for (const documentItem of previousDocuments) {
-      void fetch(
-        `/api/documents/${encodeURIComponent(documentItem.id)}?sessionId=${encodeURIComponent(previousSessionId)}`,
-        { method: "DELETE" },
+    void createConversation(activeAgentId).catch((error) => {
+      addError(
+        error instanceof Error
+          ? error.message
+          : "A new conversation could not be created.",
       );
-    }
+    });
   }
 
   elements.form.addEventListener("submit", (event) => {
@@ -910,6 +1293,13 @@
       setAttachmentMenuOpen(false);
       elements.attachmentMenuButton.focus();
     }
+    if (
+      event.key === "Escape" &&
+      elements.agentPanel.classList.contains("agent-panel--open")
+    ) {
+      event.preventDefault();
+      setHistoryOpen(false);
+    }
   });
 
   elements.pasteForm.addEventListener("submit", (event) => {
@@ -925,14 +1315,71 @@
   });
 
   elements.resetButton.addEventListener("click", startNewConversation);
+  elements.historyNew.addEventListener("click", startNewConversation);
+  elements.historyButton.addEventListener("click", () => {
+    setHistoryOpen(true);
+  });
+  elements.historyClose.addEventListener("click", () => {
+    setHistoryOpen(false);
+  });
+  elements.historyMore.addEventListener("click", () => {
+    void loadConversationList({ append: true }).catch((error) => {
+      elements.historyStatus.textContent =
+        error instanceof Error ? error.message : "More chats could not be loaded.";
+    });
+  });
+  elements.historySearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void searchConversations(elements.historySearchInput.value).catch((error) => {
+      elements.historyStatus.textContent =
+        error instanceof Error ? error.message : "Saved chats could not be searched.";
+    });
+  });
+  elements.historySearchInput.addEventListener("input", () => {
+    if (!elements.historySearchInput.value.trim()) {
+      renderHistoryList();
+      elements.historyMore.hidden = !nextConversationCursor;
+    }
+  });
+  narrowLayout.addEventListener("change", () => {
+    if (!narrowLayout.matches) {
+      elements.agentPanel.classList.remove("agent-panel--open");
+      elements.historyButton.setAttribute("aria-expanded", "false");
+    }
+    syncHistoryPanelAccess();
+  });
 
   async function initialise() {
+    syncHistoryPanelAccess();
     await loadAgents();
     applyAgentIdentity();
     renderAgentList();
     renderSuggestions();
     renderDocuments();
-    renderNewConversation();
+    try {
+      await loadConversationList();
+      try {
+        await loadConversation(sessionId);
+        return;
+      } catch {
+        // The browser may hold a pre-persistence session UUID.
+      }
+      const mostRecent = conversations.find(
+        (conversation) => conversation.agentId === activeAgentId,
+      ) ?? conversations[0];
+      if (mostRecent) {
+        await loadConversation(mostRecent.id);
+      } else {
+        await createConversation(activeAgentId);
+      }
+    } catch (error) {
+      renderNewConversation();
+      addError(
+        error instanceof Error
+          ? error.message
+          : "Saved chats could not be loaded. Restart the local app and try again.",
+      );
+    }
   }
 
   void initialise();

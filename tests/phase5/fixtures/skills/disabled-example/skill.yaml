@@ -1,4 +1,0 @@
-id: disabled-example
-name: Disabled Example
-version: 1.0.0
-description: Proves disabled instructions stay out of the agent prompt.

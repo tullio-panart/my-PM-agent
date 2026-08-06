@@ -145,15 +145,28 @@ The local task rows are data, not workflow JSON. They live in the persistent `da
 
 ## Conversation memory
 
-The first workflow uses n8n Simple Memory:
+The chat gateway stores conversations in plaintext SQLite at
+`data/chat/chat.sqlite`:
 
 - The browser's `sessionId` separates one conversation from another.
-- The latest six interactions are supplied to the agent.
+- Every user and assistant message remains available in the chat history UI.
+- Full-text search can find text across saved conversations.
+- The newest six complete turns that fit within 24,000 characters are supplied
+  to the agent when an old conversation continues.
 - Selecting **New conversation** in the browser creates a fresh session.
-- Memory is held inside the running n8n process, not in the persistent data folder.
-- Restarting or stopping n8n clears conversation memory.
+- Restarting or stopping the stack preserves both the transcript and recent
+  agent context.
+- A new conversation does not inherit facts from another conversation.
 
-Workflows, the n8n owner account, and encrypted credentials do persist across a normal restart. Durable conversation history is deliberately deferred from the local beginner release.
+To inspect row counts and redacted message lengths without another SQLite app:
+
+```bash
+npm run inspect-chats
+```
+
+The optional `-- --full` flag prints private message text, so use it only when
+the terminal is safe to display. A conversation UUID is not an authenticated
+user identity; this remains a single-user loopback-only workshop app.
 
 ## Local task data
 
@@ -179,11 +192,13 @@ the original source files somewhere appropriate if they must be retained.
 
 A backup contains:
 
+- Plaintext saved chat titles, messages, attachment metadata, and search data.
 - The complete local n8n data directory.
 - Local users and settings.
 - Workflows and execution data.
 - Encrypted credentials.
 - n8n's own private encryption-key file, which is required to decrypt those credentials.
+- A versioned manifest describing the backup contents.
 
 Backups are written below `backups/YYYYMMDD-HHMMSS` and ignored by Git.
 
@@ -203,13 +218,18 @@ Double-click `backup-windows.cmd`, or run from PowerShell:
 .\scripts\windows\backup.ps1
 ```
 
-The backup helper briefly stops n8n to produce a consistent database and filesystem archive. If n8n was running before the backup, the helper starts it again and waits for the stack to become healthy.
+The backup helper briefly stops the chat gateway to checkpoint SQLite and stops
+n8n to produce a consistent archive. It restarts whichever services were
+running. Temporary extracted document context is not included.
 
-Treat the backup directory as a secret. Do not commit, upload, or share it casually.
+Treat the backup directory as a secret. Chat transcripts are plaintext even
+though n8n credentials are encrypted. Do not commit, upload, or share it casually.
 
 ## Restore a backup
 
-Restore replaces all current local n8n data. Create a fresh backup first if the current state matters.
+Restore replaces current saved chats and local n8n data when the backup has a
+version 2 manifest. Create a fresh backup first if the current state matters.
+An older n8n-only backup remains supported and leaves current saved chats alone.
 
 ### macOS
 
@@ -229,12 +249,16 @@ Double-click `restore-windows.cmd`, or run:
 
 Type `RESTORE` when prompted.
 
-Restore reinstates the complete n8n data directory, including the matching encryption key, then starts the stack and waits for healthy services.
+Restore validates the saved chat database before changing local data, reinstates
+the complete n8n data directory and matching encryption key, then starts the
+stack and waits for healthy services.
 
 ## Reset all local app data
 
 Reset permanently removes:
 
+- Saved chat transcripts, titles, attachment metadata, and search data inside
+  `data/chat`.
 - The local n8n owner account.
 - Credentials.
 - Workflows.

@@ -282,8 +282,8 @@ In GitHub Desktop:
 4. Select **Push origin**.
 5. Open your GitHub repository and confirm the new commit is visible.
 
-Local n8n accounts, credentials, tasks, and conversation memory are not uploaded
-to GitHub. Only the project files you reviewed are pushed.
+Local n8n accounts, credentials, tasks, and saved chats are not uploaded to
+GitHub. Only the project files you reviewed are pushed.
 
 ## Part 9 — stop safely and come back later
 
@@ -292,8 +292,8 @@ Before an experiment, create a private backup:
 - macOS: double-click `backup.command`.
 - Windows: double-click `backup-windows.cmd`.
 
-Treat `backups/` like a password. It contains encrypted credentials and local
-settings.
+Treat `backups/` like a password. It contains plaintext chat transcripts,
+encrypted credentials, and local settings.
 
 To stop at the end of the day:
 

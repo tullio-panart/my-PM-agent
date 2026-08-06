@@ -74,11 +74,15 @@ Keep tool-safety and exact-confirmation instructions intact.
 
 1. Ask the agent to remember a harmless project fact.
 2. Refer to that fact in the same conversation.
-3. select **New conversation** and ask again.
-4. Inspect the n8n execution for the Claude node without opening credentials.
+3. Stop and restart the local stack, reopen the chat, and ask again.
+4. Search for the original message in **Chats**.
+5. Select **New conversation** and ask again.
+6. Run `npm run inspect-chats` and inspect redacted row metadata.
+7. Inspect the n8n execution for the Claude node without opening credentials.
 
 **Proof:** the learner can explain that memory is local, conversation-scoped,
-limited, and cleared by an n8n restart.
+durable across restart, completely browsable, but bounded when supplied to the
+model.
 
 ## Exercise 5 — use the task-reading tool
 

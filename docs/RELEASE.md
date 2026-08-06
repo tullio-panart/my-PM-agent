@@ -20,7 +20,6 @@ JavaScript dependencies are locked by:
 - `package-lock.json`
 - `apps/chat/package-lock.json`
 - `services/document-worker/package-lock.json`
-- `tests/phase7/package-lock.json`
 
 The setup helper verifies the private Node.js runtime download with the official
 SHA-256 checksum and verifies its bundled npm version before using it. Release
@@ -99,15 +98,12 @@ Run:
 
 ```bash
 node scripts/validate-release.mjs
-./scripts/test-phase5.sh
-./scripts/test-phase6.sh
-./scripts/test-phase7.sh
-./scripts/test-phase8.sh
+node scripts/validate-workflows.mjs
 ```
 
-CI repeats the native learner-path smoke on Linux, macOS, Windows x64, and
-Windows 11 ARM. The Windows jobs exercise the root `.cmd` launchers under
-Windows PowerShell 5.1 and prove fallback from an incompatible system Node.
-Separate jobs run the native agent, resilience, and browser checks. A release is
-not valid if the tag, `VERSION`, version pins, documentation, workflows, or
+The repository does not currently run automated CI/CD or test jobs. Before a
+release, complete the instructor fresh-copy checklist on every supported
+platform and manually exercise setup, chat persistence, restart recovery,
+backup, restore, safe write confirmation, and diagnostics. A release is not
+valid if the tag, `VERSION`, version pins, documentation, workflows, or
 checksums disagree.

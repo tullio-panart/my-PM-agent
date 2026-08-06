@@ -3,6 +3,36 @@
 All meaningful product changes are recorded here. This project uses semantic
 versioning for local workshop releases.
 
+## Unreleased
+
+### Added
+
+- Durable plaintext SQLite chat history stored in the Git-ignored local data
+  folder.
+- Conversation browsing, full-text search, rename, delete, pagination, and
+  mobile history navigation.
+- Restart-safe bounded conversation context supplied by the gateway to n8n.
+- Crash-safe request IDs, interrupted/failed turn states, and duplicate-response
+  protection.
+- Chat database diagnostics, redacted inspection, backup, restore, and reset
+  support on macOS and Windows.
+
+### Changed
+
+- The n8n agent now validates contract version 3 history supplied by the
+  gateway and no longer uses process-local Simple Memory.
+- Backups explicitly contain plaintext chat transcripts in addition to
+  encrypted n8n credentials and settings.
+- The Anthropic mock used before removal was corrected to distinguish the
+  current instruction from restored conversation history; the previously
+  failing native agent CI step passed after the fix.
+
+### Removed
+
+- GitHub Actions CI/CD, automated test directories, smoke-test scripts, and
+  package test commands, at the repository owner's direction after the
+  persistence fix was confirmed.
+
 ## 0.2.0 — 2026-07-29
 
 ### Added

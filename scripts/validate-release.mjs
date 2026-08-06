@@ -125,7 +125,6 @@ for (const removedArtifact of [
   "apps/chat/Dockerfile",
   "services/document-worker/Dockerfile",
   "services/document-worker/.dockerignore",
-  "tests/phase7/Dockerfile.browser",
   "scripts/windows/Common.ps1",
 ]) {
   check(

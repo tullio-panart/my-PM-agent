@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
@@ -21,6 +22,11 @@ import {
   MAX_PASTED_CHARACTERS,
   type DocumentRecord,
 } from "./documents.js";
+import {
+  ChatStore,
+  type HistoryMessage,
+  type StoredAttachment,
+} from "./chat-store.js";
 
 const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_REQUEST_BYTES = 65_536;
@@ -49,6 +55,8 @@ type ErrorCode =
   | "AGENT_ERROR"
   | "AGENT_TIMEOUT"
   | "AGENT_UNAVAILABLE"
+  | "CHAT_HISTORY_ERROR"
+  | "CONVERSATION_NOT_FOUND"
   | "DOCUMENT_ERROR"
   | "DOCUMENT_NOT_FOUND"
   | "DOCUMENT_SERVICE_UNAVAILABLE"
@@ -57,10 +65,12 @@ type ErrorCode =
   | "INVALID_REQUEST"
   | "MESSAGE_TOO_LONG"
   | "RATE_LIMITED"
+  | "REQUEST_IN_PROGRESS"
   | "TOO_MANY_DOCUMENTS"
   | "UNSUPPORTED_FILE_TYPE";
 
 interface ChatRequest {
+  requestId: string;
   sessionId: string;
   agentId: string;
   message: string;
@@ -68,10 +78,12 @@ interface ChatRequest {
 }
 
 interface UpstreamChatRequest {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  requestId: string;
   sessionId: string;
   agentId: string;
   message: string;
+  history: HistoryMessage[];
   documents: Array<{
     id: string;
     name: string;
@@ -84,6 +96,8 @@ interface UpstreamChatRequest {
 }
 
 interface ChatResponse {
+  requestId?: string;
+  messageId?: string;
   sessionId: string;
   reply: string;
   runId?: string;
@@ -97,6 +111,7 @@ export interface ChatGatewayOptions {
   logError?: (message: string, error?: unknown) => void;
   agents?: readonly AgentDefinition[];
   documentStore?: DocumentStore;
+  chatStore?: ChatStore;
 }
 
 class PublicError extends Error {
@@ -205,6 +220,10 @@ function validateChatRequest(
 
   const candidate = body as Record<string, unknown>;
   const sessionId = validateSessionId(candidate.sessionId);
+  const requestId =
+    candidate.requestId === undefined
+      ? randomUUID()
+      : validateSessionId(candidate.requestId);
   const rawAgentId =
     typeof candidate.agentId === "string"
       ? candidate.agentId.trim()
@@ -259,6 +278,7 @@ function validateChatRequest(
   }
 
   return {
+    requestId,
     sessionId,
     agentId: agent.id,
     message,
@@ -502,6 +522,7 @@ async function callAgent(
   request: ChatRequest,
   agent: AgentDefinition,
   documents: DocumentRecord[],
+  history: HistoryMessage[],
   options: Required<
     Pick<ChatGatewayOptions, "fetchImplementation" | "timeoutMs" | "upstreamUrl">
   >,
@@ -520,10 +541,12 @@ async function callAgent(
             `${configuredUrl.protocol}//${configuredUrl.host}`,
           );
     const upstreamRequest: UpstreamChatRequest = {
-      schemaVersion: 2,
+      schemaVersion: 3,
+      requestId: request.requestId,
       sessionId: request.sessionId,
       agentId: request.agentId,
       message: request.message,
+      history,
       documents: documents.map((document) => ({
         id: document.id,
         name: document.name,
@@ -643,11 +666,83 @@ async function serveStaticFile(
   }
 }
 
+function queryLimit(
+  value: string | null,
+  fallback: number,
+  maximum: number,
+): number {
+  if (value === null) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw new PublicError(
+      400,
+      "INVALID_REQUEST",
+      `Limit must be a whole number from 1 to ${maximum}.`,
+    );
+  }
+  return parsed;
+}
+
+function activeAgentFor(
+  value: unknown,
+  agents: readonly AgentDefinition[],
+): AgentDefinition {
+  const id = typeof value === "string" ? value.trim() : "project-manager";
+  const agent = agents.find(
+    (candidate) => candidate.id === id && candidate.status === "active",
+  );
+  if (!agent) {
+    throw new PublicError(
+      400,
+      "INVALID_REQUEST",
+      "That agent is not available yet.",
+    );
+  }
+  return agent;
+}
+
+function attachmentSnapshot(document: DocumentRecord): StoredAttachment {
+  return {
+    documentId: document.id,
+    name: document.name,
+    type: document.type,
+    mimeType: document.mimeType,
+    wordCount: document.wordCount,
+    characterCount: document.characterCount,
+    expiresAt: document.expiresAt,
+    ...(document.pageCount === undefined
+      ? {}
+      : { pageCount: document.pageCount }),
+  };
+}
+
+function publicConversationPage(
+  page: NonNullable<ReturnType<ChatStore["getConversationPage"]>>,
+): unknown {
+  const now = Date.now();
+  return {
+    ...page,
+    messages: page.messages.map((message) => ({
+      ...message,
+      attachments: message.attachments.map((attachment) => ({
+        ...attachment,
+        expired: Date.parse(attachment.expiresAt) <= now,
+      })),
+    })),
+  };
+}
+
 export function createChatHandler(options: ChatGatewayOptions): RequestListener {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const agents = options.agents ?? DEFAULT_AGENTS;
   const documentStore = options.documentStore;
+  if (!options.chatStore) {
+    throw new Error("Chat history store is required.");
+  }
+  const chatStore = options.chatStore;
 
   return (request, response) => {
     void (async () => {
@@ -686,6 +781,255 @@ export function createChatHandler(options: ChatGatewayOptions): RequestListener 
           schemaVersion: 1,
           agents: publicAgentDefinitions(agents),
         });
+        return;
+      }
+
+      if (url.pathname === "/api/conversations/search") {
+        if (request.method !== "GET") {
+          sendJson(
+            response,
+            405,
+            {
+              error: {
+                code: "INVALID_REQUEST",
+                message: "Search conversations with GET.",
+              },
+            },
+            { Allow: "GET" },
+          );
+          return;
+        }
+        try {
+          const query = (url.searchParams.get("q") ?? "").trim();
+          if (query.length === 0 || query.length > 200) {
+            throw new PublicError(
+              400,
+              "INVALID_REQUEST",
+              "Search for between 1 and 200 characters.",
+            );
+          }
+          const limit = queryLimit(url.searchParams.get("limit"), 50, 100);
+          sendJson(response, 200, {
+            results: chatStore.search(query, limit),
+          });
+        } catch (error) {
+          if (error instanceof PublicError) {
+            sendError(response, error);
+          } else {
+            options.logError?.("Could not search chat history", error);
+            sendError(
+              response,
+              new PublicError(
+                500,
+                "CHAT_HISTORY_ERROR",
+                "Chat history could not be searched. Try again.",
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      if (url.pathname === "/api/conversations") {
+        try {
+          if (request.method === "GET") {
+            const limit = queryLimit(url.searchParams.get("limit"), 50, 100);
+            let page;
+            try {
+              page = chatStore.listConversations(
+                limit,
+                url.searchParams.get("cursor") ?? undefined,
+              );
+            } catch {
+              throw new PublicError(
+                400,
+                "INVALID_REQUEST",
+                "That conversation page is invalid. Refresh and try again.",
+              );
+            }
+            sendJson(response, 200, page);
+            return;
+          }
+          if (request.method === "POST") {
+            const body = await readRequestBody(request);
+            if (
+              typeof body !== "object" ||
+              body === null ||
+              Array.isArray(body)
+            ) {
+              throw new PublicError(
+                400,
+                "INVALID_REQUEST",
+                "The conversation could not be created.",
+              );
+            }
+            const agent = activeAgentFor(
+              (body as Record<string, unknown>).agentId,
+              agents,
+            );
+            const conversation = chatStore.createConversation(
+              randomUUID(),
+              agent.id,
+            );
+            sendJson(response, 201, { conversation });
+            return;
+          }
+          sendJson(
+            response,
+            405,
+            {
+              error: {
+                code: "INVALID_REQUEST",
+                message: "That method is not supported.",
+              },
+            },
+            { Allow: "GET, POST" },
+          );
+        } catch (error) {
+          if (error instanceof PublicError) {
+            sendError(response, error);
+          } else {
+            options.logError?.("Could not manage conversations", error);
+            sendError(
+              response,
+              new PublicError(
+                500,
+                "CHAT_HISTORY_ERROR",
+                "Chat history is not available. Restart the local app and try again.",
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      if (url.pathname.startsWith("/api/conversations/")) {
+        try {
+          const rawId = url.pathname.slice("/api/conversations/".length);
+          if (rawId.length === 0 || rawId.includes("/")) {
+            throw new PublicError(
+              404,
+              "CONVERSATION_NOT_FOUND",
+              "That conversation could not be found.",
+            );
+          }
+          let conversationId: string;
+          try {
+            conversationId = validateSessionId(decodeURIComponent(rawId));
+          } catch {
+            throw new PublicError(
+              404,
+              "CONVERSATION_NOT_FOUND",
+              "That conversation could not be found.",
+            );
+          }
+
+          if (request.method === "GET") {
+            const limit = queryLimit(url.searchParams.get("limit"), 100, 200);
+            const rawBefore = url.searchParams.get("before");
+            const before = rawBefore === null ? undefined : Number(rawBefore);
+            if (
+              before !== undefined &&
+              (!Number.isSafeInteger(before) || before < 1)
+            ) {
+              throw new PublicError(
+                400,
+                "INVALID_REQUEST",
+                "That message page is invalid. Refresh and try again.",
+              );
+            }
+            const page = chatStore.getConversationPage(
+              conversationId,
+              limit,
+              before,
+            );
+            if (!page) {
+              throw new PublicError(
+                404,
+                "CONVERSATION_NOT_FOUND",
+                "That conversation could not be found.",
+              );
+            }
+            sendJson(response, 200, publicConversationPage(page));
+            return;
+          }
+
+          if (request.method === "PATCH") {
+            const body = await readRequestBody(request);
+            const rawTitle =
+              typeof body === "object" &&
+              body !== null &&
+              !Array.isArray(body)
+                ? (body as Record<string, unknown>).title
+                : undefined;
+            const title =
+              typeof rawTitle === "string"
+                ? rawTitle.replace(/\s+/g, " ").trim()
+                : "";
+            if (title.length === 0 || title.length > 80) {
+              throw new PublicError(
+                400,
+                "INVALID_REQUEST",
+                "Conversation titles must be between 1 and 80 characters.",
+              );
+            }
+            const conversation = chatStore.renameConversation(
+              conversationId,
+              title,
+            );
+            if (!conversation) {
+              throw new PublicError(
+                404,
+                "CONVERSATION_NOT_FOUND",
+                "That conversation could not be found.",
+              );
+            }
+            sendJson(response, 200, { conversation });
+            return;
+          }
+
+          if (request.method === "DELETE") {
+            if (!chatStore.deleteConversation(conversationId)) {
+              throw new PublicError(
+                404,
+                "CONVERSATION_NOT_FOUND",
+                "That conversation could not be found.",
+              );
+            }
+            response.writeHead(204, {
+              ...SECURITY_HEADERS,
+              "Cache-Control": "no-store",
+            });
+            response.end();
+            return;
+          }
+
+          sendJson(
+            response,
+            405,
+            {
+              error: {
+                code: "INVALID_REQUEST",
+                message: "That method is not supported.",
+              },
+            },
+            { Allow: "GET, PATCH, DELETE" },
+          );
+        } catch (error) {
+          if (error instanceof PublicError) {
+            sendError(response, error);
+          } else {
+            options.logError?.("Could not manage conversation", error);
+            sendError(
+              response,
+              new PublicError(
+                500,
+                "CHAT_HISTORY_ERROR",
+                "Chat history is not available. Restart the local app and try again.",
+              ),
+            );
+          }
+        }
         return;
       }
 
@@ -903,17 +1247,36 @@ export function createChatHandler(options: ChatGatewayOptions): RequestListener 
           return;
         }
 
+        let durableRequest: ChatRequest | undefined;
+        let turnStarted = false;
         try {
           const body = await readRequestBody(request);
           const chatRequest = validateChatRequest(body, agents);
-          const agent = agents.find(
-            (candidate) => candidate.id === chatRequest.agentId,
+          durableRequest = chatRequest;
+          const agent = activeAgentFor(chatRequest.agentId, agents);
+          const existing = chatStore.getTurn(
+            chatRequest.sessionId,
+            chatRequest.requestId,
           );
-          if (!agent) {
+          if (existing.assistant) {
+            sendJson(response, 200, {
+              sessionId: chatRequest.sessionId,
+              requestId: chatRequest.requestId,
+              messageId: existing.assistant.id,
+              reply: existing.assistant.content,
+              ...(existing.assistant.runId === undefined
+                ? {}
+                : { runId: existing.assistant.runId }),
+            });
+            return;
+          }
+          if (existing.user) {
             throw new PublicError(
-              400,
-              "INVALID_REQUEST",
-              "That agent is not available yet.",
+              409,
+              "REQUEST_IN_PROGRESS",
+              existing.user.status === "pending"
+                ? "That message is already being processed. Wait for its reply."
+                : "That earlier send was interrupted or failed. Send it again as a new message.",
             );
           }
           if (chatRequest.documentIds.length > 0 && !documentStore) {
@@ -929,20 +1292,62 @@ export function createChatHandler(options: ChatGatewayOptions): RequestListener 
                 chatRequest.documentIds,
               )
             : [];
+          chatStore.beginTurn({
+            conversationId: chatRequest.sessionId,
+            agentId: chatRequest.agentId,
+            requestId: chatRequest.requestId,
+            content: chatRequest.message,
+            attachments: documents.map(attachmentSnapshot),
+          });
+          turnStarted = true;
+          const history = chatStore.getHistory(chatRequest.sessionId);
           const chatResponse = await callAgent(
             chatRequest,
             agent,
             documents,
+            history,
             {
               fetchImplementation,
               timeoutMs,
               upstreamUrl: options.upstreamUrl,
             },
           );
-          sendJson(response, 200, chatResponse);
+          const completed = chatStore.completeTurn({
+            conversationId: chatRequest.sessionId,
+            requestId: chatRequest.requestId,
+            content: chatResponse.reply,
+            ...(chatResponse.runId === undefined
+              ? {}
+              : { runId: chatResponse.runId }),
+          });
+          if (!completed.assistant) {
+            throw new Error("Stored assistant reply could not be read");
+          }
+          sendJson(response, 200, {
+            ...chatResponse,
+            requestId: chatRequest.requestId,
+            messageId: completed.assistant.id,
+          });
         } catch (error) {
+          const publicError =
+            error instanceof DocumentStoreError
+              ? asPublicError(error)
+              : error instanceof PublicError
+                ? error
+                : undefined;
+          if (turnStarted && durableRequest) {
+            try {
+              chatStore.failTurn(
+                durableRequest.sessionId,
+                durableRequest.requestId,
+                publicError?.code ?? "AGENT_ERROR",
+              );
+            } catch (storeError) {
+              options.logError?.("Could not mark failed chat turn", storeError);
+            }
+          }
           if (error instanceof DocumentStoreError) {
-            sendError(response, asPublicError(error));
+            sendError(response, publicError as PublicError);
             return;
           } else if (error instanceof PublicError) {
             sendError(response, error);
@@ -995,5 +1400,11 @@ export function createChatHandler(options: ChatGatewayOptions): RequestListener 
 }
 
 export function createChatServer(options: ChatGatewayOptions): Server {
-  return createServer(createChatHandler(options));
+  const ownsChatStore = options.chatStore === undefined;
+  const chatStore = options.chatStore ?? new ChatStore(":memory:");
+  const server = createServer(createChatHandler({ ...options, chatStore }));
+  if (ownsChatStore) {
+    server.once("close", () => chatStore.close());
+  }
+  return server;
 }

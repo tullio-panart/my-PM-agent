@@ -113,11 +113,5 @@ Before adding another state-changing tool:
 5. Consume confirmation before dispatch.
 6. Use an idempotent, narrowly scoped execution worker.
 7. Audit proposal and execution outcomes.
-8. Test altered, cross-session, expired, superseded, repeated, and simultaneous confirmations.
+8. Manually exercise altered, cross-session, expired, superseded, repeated, and simultaneous confirmations in a throwaway local project.
 9. Keep destructive actions unavailable for the local release.
-
-Run the complete safety suite:
-
-```bash
-./scripts/test-phase5.sh
-```

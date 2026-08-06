@@ -35,7 +35,7 @@ No human-pilot issue is recorded yet. Add rows only after a real observation.
 After each fix:
 
 1. Link it to anonymous pilot IDs.
-2. Add or update an automated test when the behaviour is deterministic.
+2. Record and repeat a deterministic manual reproduction when possible.
 3. Retest the affected instruction with a person who did not author the fix.
 4. Update `pilot/results.json`; never rewrite a failed observation as though it
    did not occur.

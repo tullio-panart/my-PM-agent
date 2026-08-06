@@ -79,6 +79,8 @@ All local state lives inside the repository folder and is ignored by Git:
 - `node_modules/` — the exact npm-pinned n8n release.
 - `apps/chat/dist/` — the compiled chat gateway.
 - `data/n8n/` — the n8n database, settings, and encrypted credentials, including a private encryption key n8n generates on first start.
+- `data/chat/` — plaintext saved conversations, attachment metadata, and the
+  full-text search index.
 - `data/documents/` — temporary extracted document context, retained for at most 24 hours.
 - `data/logs/` — one log file per service.
 - `data/run/` — process records for stop/start.

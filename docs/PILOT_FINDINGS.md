@@ -8,9 +8,11 @@ The canonical record is `pilot/results.json`. It contains zero participants and
 is intentionally evaluated as `NO_GO`. No human usability result is claimed in
 this document until real anonymous sessions are recorded.
 
-## Automated engineering findings
+## Historical engineering findings
 
-These checks reduce pilot risk but do not replace the pilot.
+These checks reduced pilot risk but did not replace the pilot. They record the
+state before the automated test and CI/CD assets were removed at the repository
+owner's direction in August 2026; the checks are no longer runnable here.
 
 GitHub Actions run `30198827506` passed on 2026-07-26 for evidence commit
 `adff923`.
@@ -42,7 +44,7 @@ Date: 2026-07-26.
 | 768 × 1024 | None | Yes | Shift+Enter retained focus and inserted a newline | Pass |
 | 1440 × 900 | None | Yes | Shift+Enter retained focus and inserted a newline | Pass |
 
-This is an automated Chromium result from `scripts/test-phase7.sh`. It does not
+This is a historical automated Chromium result. It does not
 claim Safari, Edge, assistive-technology, macOS learner, or Windows learner
 coverage; those remain human-pilot evidence.
 

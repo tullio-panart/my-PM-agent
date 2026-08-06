@@ -146,15 +146,20 @@ This endpoint intentionally does not test Claude. Use an ordinary chat message f
 
 ## The agent forgot an earlier message
 
-This is expected after n8n restarts or stops. The first release uses Simple Memory, which is process-local and keeps the latest six interactions for each browser session.
+Saved chats survive n8n and gateway restarts. The agent receives the latest six
+complete turns that fit within 24,000 characters; older messages remain
+browsable and searchable but are not automatically sent to Claude.
 
-If n8n did not restart:
+Check:
 
-1. Confirm the browser was not reset or its site data cleared.
-2. Confirm the same browser tab still has the same conversation.
-3. Check that **Conversation Memory** remains connected to the agent in the workflow.
+1. The expected saved conversation is selected in **Chats**.
+2. **New conversation** was not selected; new chats intentionally start clean.
+3. The missing detail is within the latest six completed turns and was not part
+   of an expired document that now needs to be uploaded again.
+4. Diagnostics reports that the local chat database and search index are ready.
 
-Durable conversation history is deferred from the local beginner release.
+Do not add n8n Simple Memory to the workflow. SQLite history supplied by the
+gateway is authoritative.
 
 ## The agent says local task data is not ready
 
@@ -246,10 +251,15 @@ Check:
 
 - Setup has prepared a working Node.js runtime and completed once.
 - The selected backup contains `n8n-data.tar.gz` (or an `n8n-data` folder).
+- A current-format backup also contains `backup.json` and
+  `chat-data/chat.sqlite`.
 - The backup path is local and accessible.
 - There is enough disk space.
 
-The backup includes n8n's own encryption-key file, so a complete backup restores encrypted credentials correctly. A partial copy of the database alone cannot.
+The backup includes n8n's own encryption-key file, so a complete backup restores
+encrypted credentials correctly. Saved chat transcripts are plaintext and must
+also be kept private. A partial copy of either database alone is not a complete
+backup.
 
 ## Windows script execution error
 

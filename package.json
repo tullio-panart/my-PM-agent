@@ -19,6 +19,7 @@
     "sync-skills": "node scripts/local.mjs sync-skills",
     "export-workflows": "node scripts/local.mjs export-workflows",
     "backup": "node scripts/local.mjs backup",
+    "inspect-chats": "node scripts/inspect-chat-history.mjs",
     "reset": "node scripts/local.mjs reset"
   },
   "dependencies": {

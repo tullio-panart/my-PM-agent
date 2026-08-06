@@ -192,10 +192,12 @@ Before a workshop experiment or workflow edit, create a private backup:
 - macOS: double-click `backup.command`.
 - Windows: double-click `backup-windows.cmd`.
 
-Backups contain encrypted credentials and local settings. They are ignored by Git and must stay private.
+Backups contain plaintext saved chats, encrypted credentials, and local settings.
+They are ignored by Git and must stay private.
 
-Normal stop/start keeps data. Reset permanently removes local n8n accounts,
-credentials, workflows, history, and extracted document context:
+Normal stop/start restores saved chats and recent per-conversation context.
+Reset permanently removes saved chats, local n8n accounts, credentials,
+workflows, execution history, and extracted document context:
 
 - macOS: double-click `reset.command`.
 - Windows: double-click `reset-windows.cmd`.
@@ -209,7 +211,8 @@ Reset asks you to type `RESET`. The [operations and recovery guide](docs/LOCAL_O
 - The exact pinned n8n release, installed with npm and kept in this project's folder.
 - A TypeScript chat gateway, custom browser interface, and isolated document reader.
 - Eleven reviewed n8n workflows, including the visual learner checklist.
-- Claude Sonnet integration with per-conversation local memory.
+- Durable local SQLite chat history with browsing, full-text search, rename,
+  deletion, and restart-safe bounded conversation memory.
 - Four local Data Tables for tasks, audits, pending confirmations, and enabled skills.
 - Four editable Markdown skills, including grounded meeting analysis.
 - A central agent registry with Project Manager active and Sales, Marketing,
@@ -235,6 +238,7 @@ multi-user authentication, RAG, queues, and autonomous background work.
 - [Customise the chat](docs/CUSTOMISE_CHAT.md)
 - [Customise Markdown skills](docs/CUSTOMISE_SKILLS.md)
 - [Use documents and long transcripts](docs/DOCUMENT_UPLOADS.md)
+- [Understand durable local chat memory](docs/CHAT_PERSISTENCE_PLAN.md)
 - [Troubleshooting quick table](docs/TROUBLESHOOTING.md)
 
 ### Instructors
@@ -268,17 +272,12 @@ by the learner helpers:
 ```bash
 node scripts/validate-workflows.mjs
 
-./scripts/test-phase5.sh
-./scripts/test-phase6.sh
-./scripts/test-phase7.sh
-./scripts/test-phase8.sh
-
 # The evaluator remains NO_GO because the owner waived, rather than fabricated,
 # the planned human pilot.
 ./scripts/evaluate-pilot.sh
 ```
 
-The maintenance helpers are also available directly: `node scripts/local.mjs help` lists setup, start, stop, status, logs, diagnose, and the import, export, backup, restore, and reset commands. Contributor and CI smoke tests use isolated native project copies and local mock services.
+The maintenance helpers are also available directly: `node scripts/local.mjs help` lists setup, start, stop, status, logs, diagnose, and the import, export, backup, restore, and reset commands. The repository does not currently include an automated test or CI/CD suite; contributors should validate workflow structure and manually exercise the affected learner path before sharing a change.
 
 ## Current milestone
 

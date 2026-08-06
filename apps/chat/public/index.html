@@ -16,7 +16,11 @@
     <a class="skip-link" href="#message-input">Skip to message box</a>
 
     <main class="app-shell">
-      <aside class="agent-panel" aria-labelledby="agent-name">
+      <aside class="agent-panel" id="agent-panel" aria-labelledby="agent-name">
+        <button class="history-close" id="history-close" type="button">
+          <span aria-hidden="true">×</span>
+          <span class="visually-hidden">Close chat history</span>
+        </button>
         <div>
           <div class="brand">
             <span class="brand__mark" id="agent-initials" aria-hidden="true">PM</span>
@@ -41,10 +45,36 @@
           <div class="agent-list" id="agent-list" role="list"></div>
         </section>
 
+        <section class="history-panel" aria-labelledby="history-title">
+          <div class="history-panel__header">
+            <p class="section-label" id="history-title">Chats</p>
+            <button class="history-new" id="history-new" type="button">
+              New
+            </button>
+          </div>
+          <form class="history-search" id="history-search-form" role="search">
+            <label class="visually-hidden" for="history-search-input">
+              Search saved chats
+            </label>
+            <input
+              id="history-search-input"
+              type="search"
+              maxlength="200"
+              placeholder="Search chats"
+              autocomplete="off"
+            />
+          </form>
+          <p class="history-status" id="history-status" aria-live="polite"></p>
+          <div class="history-list" id="history-list" role="list"></div>
+          <button class="history-more" id="history-more" type="button" hidden>
+            Load more
+          </button>
+        </section>
+
         <p class="privacy-note">
           <span aria-hidden="true">✦</span>
-          Files are prepared locally, then relevant text is sent to Claude when
-          you ask the agent.
+          Chats are saved locally in plaintext. Prompts and relevant file text
+          are sent to Claude when you ask the agent.
         </p>
       </aside>
 
@@ -55,24 +85,38 @@
               PM
             </span>
             <div>
-              <p class="chat-header__kicker">Conversation</p>
-              <h2 id="conversation-title">Ask <span id="conversation-agent-name">Project Manager</span></h2>
+              <p class="chat-header__kicker">Conversation · <span id="conversation-agent-name">Project Manager</span></p>
+              <h2 id="conversation-title"><span id="conversation-title-text">New conversation</span></h2>
             </div>
           </div>
 
-          <button class="reset-button" id="reset-button" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M4.93 4.93a10 10 0 1 1-1.79 11.46M3 8V3m0 0h5"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.8"
-              />
-            </svg>
-            <span>New conversation</span>
-          </button>
+          <div class="chat-header__actions">
+            <button
+              class="history-button"
+              id="history-button"
+              type="button"
+              aria-controls="agent-panel"
+              aria-expanded="false"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 6h14M5 12h14M5 18h9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+              </svg>
+              <span class="visually-hidden">Open chat history</span>
+            </button>
+            <button class="reset-button" id="reset-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4.93 4.93a10 10 0 1 1-1.79 11.46M3 8V3m0 0h5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                />
+              </svg>
+              <span>New conversation</span>
+            </button>
+          </div>
         </header>
 
         <div

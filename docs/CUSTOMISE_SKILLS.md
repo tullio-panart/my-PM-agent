@@ -114,7 +114,7 @@ The previously synced bundle remains active when validation fails.
 Technical contributors can validate without changing n8n:
 
 ```bash
-node tests/phase5/test-skills.mjs
+node scripts/compile-skills.mjs
 ```
 
 The [finished Launch Partner example](../examples/finished-solo-project-assistant/README.md) includes an alternative project-assistant skill for comparison. After testing a learner change in a new conversation, use [GitHub Desktop](GITHUB_DESKTOP.md) to commit and push the Markdown file.

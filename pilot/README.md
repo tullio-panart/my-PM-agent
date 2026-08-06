@@ -3,7 +3,7 @@
 This folder is the source of truth for the Phase 7 learner pilot.
 
 `results.json` starts with `pilotStatus: "not_run"` and no sessions. Do not add
-invented participants or copy the synthetic fixtures from `tests/phase7`.
+invented participants or synthetic evidence.
 
 ## Record a session
 

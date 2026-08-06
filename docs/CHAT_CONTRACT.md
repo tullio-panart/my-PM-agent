@@ -3,9 +3,9 @@
 ## Purpose
 
 This contract separates the reusable browser interface from individual n8n
-agents. Contract version 2 adds a server-owned agent registry and
-session-scoped document context while retaining the version 1 text-only request
-as a backward-compatible browser input.
+agents. Contract version 3 adds durable local conversation history and bounded
+restart-safe agent context to the version 2 agent and document contract. The
+gateway continues to accept version 1 and 2 inputs during migration.
 
 The browser never calls n8n or the document reader directly.
 
@@ -93,6 +93,7 @@ Content-Type: application/json
 
 ```json
 {
+  "requestId": "34ef81f9-e46e-4e22-a890-184dd5e4ae6d",
   "sessionId": "9d4482cf-f720-4f70-98af-e337db1a9d53",
   "agentId": "project-manager",
   "message": "List the confirmed decisions and action items.",
@@ -101,19 +102,38 @@ Content-Type: application/json
 ```
 
 `agentId` defaults to `project-manager` and `documentIds` defaults to an empty
-array for version 1 browser clients.
+array for version 1 browser clients. `requestId` is a UUID used for idempotency;
+the gateway generates one for an older client that omits it.
 
 Successful response:
 
 ```json
 {
   "sessionId": "9d4482cf-f720-4f70-98af-e337db1a9d53",
+  "requestId": "34ef81f9-e46e-4e22-a890-184dd5e4ae6d",
+  "messageId": "445cc446-d86f-456d-9904-725973289f30",
   "reply": "The meeting confirmed two decisions...",
   "runId": "68c58560-19e4-49ea-aa6f-8b62e18329a0"
 }
 ```
 
 `runId` is optional.
+
+### Saved conversations
+
+```http
+GET /api/conversations?limit=50&cursor={opaqueCursor}
+POST /api/conversations
+GET /api/conversations/{sessionId}?limit=100&before={sequence}
+PATCH /api/conversations/{sessionId}
+DELETE /api/conversations/{sessionId}
+GET /api/conversations/search?q={query}&limit=50
+```
+
+The list is newest first. Conversation and message endpoints use bounded cursor
+pagination. `PATCH` accepts a `title` from 1 to 80 characters. `DELETE` removes
+the conversation, its messages, attachment snapshots, and search entries.
+Search accepts 1–200 characters and returns plain-text matching snippets.
 
 ## Gateway-to-n8n request
 
@@ -124,10 +144,15 @@ local runner.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "requestId": "34ef81f9-e46e-4e22-a890-184dd5e4ae6d",
   "sessionId": "9d4482cf-f720-4f70-98af-e337db1a9d53",
   "agentId": "project-manager",
   "message": "List the confirmed decisions and action items.",
+  "history": [
+    { "role": "user", "content": "Remember that launch is Friday." },
+    { "role": "assistant", "content": "The launch is Friday." }
+  ],
   "documents": [
     {
       "id": "be7ad8f0-f299-4ab8-9ddd-011c0aad2f17",
@@ -141,7 +166,10 @@ local runner.
 }
 ```
 
-The n8n workflow validates the request again before model or tool execution.
+The gateway selects the newest six complete user/assistant pairs that fit within
+24,000 characters. It excludes pending, failed, and interrupted turns and keeps
+the current message separate. The n8n workflow validates the request again
+before model or tool execution.
 Direct legacy requests without `schemaVersion`, `agentId`, or `documents` are
 treated as Project Manager version 1 text requests.
 
@@ -159,6 +187,9 @@ treated as Project Manager version 1 text requests.
 | Expanded DOCX archive | 1,000 entries and 50 MB |
 | Stored document lifetime | 24 hours |
 | n8n reply returned through the gateway | 8,000 characters |
+| Durable history supplied to n8n | 6 complete turns, 12 messages, 24,000 characters |
+| Conversation title | 80 characters |
+| Search query | 200 characters |
 
 Document IDs must be unique in a request. Malformed requests do not reach
 Claude.
@@ -176,6 +207,18 @@ file is not stored.
 
 This is workshop privacy, not multi-user authentication. Anyone who can execute
 code on the local computer or access its local data can inspect records.
+
+## Chat history storage
+
+The gateway stores conversation titles, user and assistant messages, safe error
+states, and attachment metadata in `data/chat/chat.sqlite`. The SQLite file is
+plaintext, Git-ignored local data. It uses foreign keys, WAL, schema migrations,
+and FTS5 search. Full document text is not duplicated into this database.
+
+A user message is committed before n8n runs. A successful assistant reply is
+committed before it is returned to the browser. A startup changes any leftover
+`pending` turn to `interrupted` and never automatically replays it. A completed
+duplicate `requestId` returns the stored response without rerunning n8n.
 
 ## Document safety
 
@@ -209,11 +252,14 @@ Common stable codes:
 | 400 | `INVALID_REQUEST` | JSON, session, agent, or required input is invalid |
 | 400 | `TOO_MANY_DOCUMENTS` | More than three documents were selected |
 | 404 | `DOCUMENT_NOT_FOUND` | Record expired, was removed, or belongs to another session |
+| 404 | `CONVERSATION_NOT_FOUND` | Saved conversation does not exist |
+| 409 | `REQUEST_IN_PROGRESS` | Request ID is pending, failed, or interrupted and cannot be replayed |
 | 413 | `MESSAGE_TOO_LONG` | Instruction exceeds 8,000 characters |
 | 413 | `FILE_TOO_LARGE` | Upload exceeds 20 MB |
 | 413 | `DOCUMENT_TEXT_TOO_LARGE` | One extracted or pasted text exceeds its limit |
 | 415 | `UNSUPPORTED_FILE_TYPE` | File is not PDF, DOCX, or TXT |
 | 429 | `RATE_LIMITED` | Provider or local limiter rejected the request |
+| 500 | `CHAT_HISTORY_ERROR` | Local conversation storage or search is unavailable |
 | 502 | `AGENT_ERROR` | n8n failed or returned an invalid response |
 | 503 | `AGENT_UNAVAILABLE` | n8n or the selected workflow is unavailable |
 | 503 | `DOCUMENT_SERVICE_UNAVAILABLE` | Local extractor is unavailable |
@@ -228,9 +274,11 @@ The gateway deadline is 120 seconds. The n8n workflow timeout is 110 seconds,
 the Claude node requests at most 2,200 output tokens, and the agent may take at
 most four iterations.
 
-Memory is keyed by `agentId:sessionId`, preventing two active roles from sharing
-one history. Simple Memory keeps six interactions and is cleared when n8n
-restarts. A session UUID is not an authenticated user identity.
+SQLite history is keyed by conversation UUID and each conversation is bound to
+one `agentId`, preventing active roles from sharing context. The n8n workflow
+does not use process-local Simple Memory. The gateway supplies the bounded
+durable history on every request, so restarting n8n does not change memory
+behaviour. A session UUID is not an authenticated user identity.
 
 ## Browser rendering
 
@@ -253,6 +301,7 @@ Changes are backward-compatible when they:
 - Add optional response fields.
 - Add ignored request fields.
 - Improve error prose without changing error codes.
+- Accept older browser requests without `requestId`.
 
 Changes require a versioned contract when they:
 
@@ -277,6 +326,9 @@ structure, prompt boundaries, and size limits. The contract suite proves:
 - A malformed n8n response returns `AGENT_ERROR`.
 - Raw upstream errors and secrets are not returned.
 - The response session identifier must match the request.
+- Completed turns persist, search, and return idempotently by `requestId`.
+- Failed and interrupted turns never enter model history or replay automatically.
+- Conversation CRUD, pagination, agent isolation, and FTS cascade deletion work.
 - Document IDs are session-bound and document text is wrapped as untrusted
   source material.
 - The local document reader rejects unsupported, oversized, or malformed input.
@@ -288,6 +340,7 @@ The native packaging and agent smoke tests additionally prove:
 - An uploaded or pasted text record can travel through the gateway.
 - A malformed direct webhook request returns a safe error without calling the model.
 - A valid browser request travels through the gateway and workflow.
-- A session recalls its own conversation while a different session remains isolated.
+- A session recalls its durable conversation after restart while a different
+  session remains isolated.
 - Agent output is capped.
-- Restarting n8n clears the documented Simple Memory state.
+- Backup, reset, and restore preserve current-format chat history.

@@ -70,6 +70,8 @@ const paths = {
   chatDir: join(projectRoot, "apps", "chat"),
   chatServer: join(projectRoot, "apps", "chat", "dist", "server.js"),
   agentRegistry: join(projectRoot, "apps", "chat", "config", "agents.json"),
+  chatDataDir: join(projectRoot, "data", "chat"),
+  chatDatabase: join(projectRoot, "data", "chat", "chat.sqlite"),
   documentWorkerDir: join(projectRoot, "services", "document-worker"),
   documentWorkerServer: join(
     projectRoot,
@@ -235,6 +237,7 @@ function chatEnv(cfg) {
     AGENT_REGISTRY_PATH: paths.agentRegistry,
     CHAT_LISTEN_ADDRESS: "127.0.0.1",
     CHAT_REQUEST_TIMEOUT_MS: "120000",
+    CHAT_DATA_DIRECTORY: paths.chatDataDir,
     DOCUMENT_DATA_DIRECTORY: paths.documentDataDir,
     DOCUMENT_WORKER_URL: `http://127.0.0.1:${cfg.documentWorkerPort}`,
     N8N_CHAT_WEBHOOK_URL: `http://127.0.0.1:${cfg.n8nPort}/webhook/chat`,
@@ -1632,10 +1635,37 @@ async function commandExportWorkflows() {
   return 0;
 }
 
+function sqliteQuickCheck(databasePath) {
+  const script = [
+    "const { DatabaseSync } = require('node:sqlite');",
+    "const database = new DatabaseSync(process.argv[1], { readOnly: true });",
+    "const row = database.prepare('PRAGMA quick_check').get();",
+    "const version = database.prepare('PRAGMA user_version').get();",
+    "database.close();",
+    "if (row.quick_check !== 'ok') process.exit(2);",
+    "process.stdout.write(String(version.user_version));",
+  ].join(" ");
+  const result = spawnSync(process.execPath, ["-e", script, databasePath], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  return {
+    ok: result.status === 0,
+    schemaVersion:
+      result.status === 0 && /^\d+$/.test(result.stdout.trim())
+        ? Number(result.stdout.trim())
+        : null,
+  };
+}
+
 async function commandBackup() {
   requireLocalInstall();
   if (!existsSync(paths.n8nDataDir)) {
     printError("There is no local n8n data to back up yet. Run setup first.");
+    return 1;
+  }
+  if (!existsSync(paths.chatDatabase)) {
+    printError("There is no local chat database to back up yet. Start the local app once, then try again.");
     return 1;
   }
 
@@ -1645,8 +1675,13 @@ async function commandBackup() {
     await chmod(backupDir, 0o700);
   }
 
-  const wasRunning = serviceIsRunning(services.n8n);
-  if (wasRunning) {
+  const wasChatRunning = serviceIsRunning(services.chat);
+  const wasN8nRunning = serviceIsRunning(services.n8n);
+  if (wasChatRunning) {
+    print("Briefly stopping chat for a consistent history backup...");
+    await stopService("chat");
+  }
+  if (wasN8nRunning) {
     print("Briefly stopping n8n for a consistent backup...");
     await stopService("n8n");
   }
@@ -1670,16 +1705,41 @@ async function commandBackup() {
         await chmod(join(backupDir, "env.backup"), 0o600);
       }
     }
+
+    cpSync(paths.chatDataDir, join(backupDir, "chat-data"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(backupDir, "backup.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 2,
+          createdAt: new Date().toISOString(),
+          contains: {
+            n8n: true,
+            chatHistory: true,
+            environment: existsSync(paths.envFile),
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
   } finally {
-    if (wasRunning) {
+    if (wasN8nRunning) {
       startService("n8n");
       await waitForService("n8n");
+    }
+    if (wasChatRunning) {
+      startService("chat");
+      await waitForService("chat");
     }
   }
 
   print("Backup created at:");
   print(`  ${backupDir}`);
-  print("It contains encrypted credentials and local settings. Keep it private.");
+  print("It contains plaintext chat transcripts, encrypted credentials, and local settings. Keep it private.");
   return 0;
 }
 
@@ -1695,15 +1755,69 @@ async function commandRestore(args) {
   const backupDir = isAbsolute(target) ? target : resolve(process.cwd(), target);
   const archive = join(backupDir, "n8n-data.tar.gz");
   const plainCopy = join(backupDir, "n8n-data");
+  const manifestPath = join(backupDir, "backup.json");
+  const chatBackupDir = join(backupDir, "chat-data");
+  const chatBackupDatabase = join(chatBackupDir, "chat.sqlite");
   if (!existsSync(archive) && !existsSync(plainCopy)) {
     printError("Backup is incomplete. Expected n8n-data.tar.gz (or an n8n-data folder).");
     return 1;
   }
 
-  print("This replaces all current local n8n users, credentials, workflows, and history.");
+  const hasManifest = existsSync(manifestPath);
+  if (hasManifest) {
+    let manifest;
+    try {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    } catch {
+      printError("Backup manifest is invalid. No local data was changed.");
+      return 1;
+    }
+    if (
+      manifest.schemaVersion !== 2 ||
+      manifest.contains?.n8n !== true ||
+      manifest.contains?.chatHistory !== true ||
+      !existsSync(chatBackupDatabase)
+    ) {
+      printError("Backup is incomplete. Expected a version 2 manifest and chat-data/chat.sqlite.");
+      return 1;
+    }
+    const chatCheck = sqliteQuickCheck(chatBackupDatabase);
+    if (!chatCheck.ok || chatCheck.schemaVersion !== 1) {
+      printError("The backed-up chat database failed its integrity or schema check. No local data was changed.");
+      return 1;
+    }
+  }
+
+  print(
+    hasManifest
+      ? "This replaces current local chats, n8n users, credentials, workflows, and history."
+      : "This is an older n8n-only backup. It replaces n8n users, credentials, workflows, and history, but leaves current saved chats unchanged.",
+  );
   if (!assumeYes && !(await confirmPhrase("Type RESTORE to continue: ", "RESTORE"))) {
     print("Restore cancelled.");
     return 0;
+  }
+
+  const restoreStagingDir = join(paths.tmpDir, `restore-${timestamp()}`);
+  const stagedN8nData = join(restoreStagingDir, "n8n-data");
+  const stagedChatData = join(restoreStagingDir, "chat-data");
+  rmSync(restoreStagingDir, { recursive: true, force: true });
+  mkdirSync(stagedN8nData, { recursive: true });
+
+  if (existsSync(archive)) {
+    const tar = spawnSync("tar", ["-xzf", archive, "-C", stagedN8nData], {
+      stdio: "inherit",
+    });
+    if (tar.error || tar.status !== 0) {
+      rmSync(restoreStagingDir, { recursive: true, force: true });
+      throw new Error("Unpacking the backup archive failed. Current local data was not changed.");
+    }
+  } else {
+    rmSync(stagedN8nData, { recursive: true, force: true });
+    cpSync(plainCopy, stagedN8nData, { recursive: true });
+  }
+  if (hasManifest) {
+    cpSync(chatBackupDir, stagedChatData, { recursive: true });
   }
 
   await stopService("chat");
@@ -1711,18 +1825,15 @@ async function commandRestore(args) {
   await stopService("n8n");
 
   rmSync(paths.n8nDataDir, { recursive: true, force: true });
-  mkdirSync(paths.n8nDataDir, { recursive: true });
+  mkdirSync(paths.n8nUserFolder, { recursive: true });
+  renameSync(stagedN8nData, paths.n8nDataDir);
 
-  if (existsSync(archive)) {
-    const tar = spawnSync("tar", ["-xzf", archive, "-C", paths.n8nDataDir], {
-      stdio: "inherit",
-    });
-    if (tar.error || tar.status !== 0) {
-      throw new Error("Unpacking the backup archive failed.");
-    }
-  } else {
-    cpSync(plainCopy, paths.n8nDataDir, { recursive: true });
+  if (hasManifest) {
+    rmSync(paths.chatDataDir, { recursive: true, force: true });
+    mkdirSync(dirname(paths.chatDataDir), { recursive: true });
+    renameSync(stagedChatData, paths.chatDataDir);
   }
+  rmSync(restoreStagingDir, { recursive: true, force: true });
 
   const envBackup = join(backupDir, "env.backup");
   if (existsSync(envBackup)) {
@@ -1733,7 +1844,11 @@ async function commandRestore(args) {
   }
 
   await startStack();
-  print("Backup restored and the local stack is healthy.");
+  print(
+    hasManifest
+      ? "Backup restored, including saved chats, and the local stack is healthy."
+      : "Older n8n backup restored. Current saved chats were preserved and the local stack is healthy.",
+  );
   return 0;
 }
 
@@ -1741,6 +1856,7 @@ async function commandReset(args) {
   const assumeYes = args.includes("--yes");
   if (
     !existsSync(paths.n8nDataDir) &&
+    !existsSync(paths.chatDataDir) &&
     !existsSync(paths.documentDataDir) &&
     !serviceIsRunning(services.n8n)
   ) {
@@ -1750,7 +1866,7 @@ async function commandReset(args) {
 
   if (!assumeYes) {
     print(
-      "This permanently removes local n8n users, credentials, workflows, history, and extracted document context.",
+      "This permanently removes saved chat transcripts, search data, local n8n users, credentials, workflows, execution history, and extracted document context.",
     );
     print("Create a backup first if any of that data matters.");
     if (!(await confirmPhrase("Type RESET to continue: ", "RESET"))) {
@@ -1763,11 +1879,12 @@ async function commandReset(args) {
   await stopService("documentWorker");
   await stopService("n8n");
   rmSync(paths.n8nUserFolder, { recursive: true, force: true });
+  rmSync(paths.chatDataDir, { recursive: true, force: true });
   rmSync(paths.documentDataDir, { recursive: true, force: true });
   rmSync(paths.tmpDir, { recursive: true, force: true });
 
   print(
-    "Local n8n and extracted document data have been removed. The private .env file was preserved.",
+    "Saved chats, local n8n data, and extracted document data have been removed. The private .env file was preserved.",
   );
   print("Run ./start.command to create a fresh local instance.");
   return 0;
@@ -1836,6 +1953,18 @@ async function commandDiagnose() {
     ok("Chat health endpoint responds.");
   } else {
     failure(`The chat is not healthy at localhost:${cfg.chatPort}.`);
+  }
+  if (existsSync(paths.chatDatabase)) {
+    const chatDatabaseCheck = sqliteQuickCheck(paths.chatDatabase);
+    if (chatDatabaseCheck.ok && chatDatabaseCheck.schemaVersion === 1) {
+      ok("The local chat database and search index are ready (schema 1).");
+    } else {
+      failure(
+        "The local chat database failed its integrity or schema check. Create a private backup before troubleshooting it.",
+      );
+    }
+  } else {
+    failure("The local chat database is missing. Restart the local stack to create it.");
   }
   const documentHealth = await fetchStatus(
     `http://127.0.0.1:${cfg.documentWorkerPort}/health`,
@@ -1954,9 +2083,9 @@ Maintenance commands:
   import-workflows   Re-import the reviewed workflows, sample data, and skills.
   sync-skills        Validate and load the enabled Markdown skills.
   export-workflows   Export normalised workflow copies for Git review.
-  backup             Save a private copy of all local n8n data.
-  restore <folder>   Replace local n8n data with a saved backup.
-  reset [--yes]      Permanently remove local n8n and document data.
+  backup             Save a private copy of chats, n8n data, and settings.
+  restore <folder>   Restore chats and n8n data from a saved backup.
+  reset [--yes]      Permanently remove chats, local n8n, and document data.
   preflight          Check Node.js, npm, disk, network, and local ports.
   logs [n8n|chat|documents]
                      Show the last lines of a service log.

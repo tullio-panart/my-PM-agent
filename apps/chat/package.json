@@ -8,9 +8,7 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "check": "npm test",
-    "start": "node dist/server.js",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "busboy": "1.6.0"

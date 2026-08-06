@@ -139,18 +139,13 @@ The required local checks are:
 
 ```bash
 node scripts/validate-workflows.mjs
-node scripts/validate-template-readiness.mjs
 node scripts/validate-release.mjs
-
-./scripts/test-phase5.sh
-./scripts/test-phase6.sh
-./scripts/test-phase7.sh
-./scripts/test-phase8.sh
 ```
 
-CI repeats contract and static checks, Windows PowerShell parsing, native setup
-on Linux/macOS/Windows, the full agent safety smoke, resilience checks, and
-browser-width validation.
+The automated test and CI/CD assets described in the completed phase history
+were removed at the repository owner's direction in August 2026. Current
+changes require the runtime validators plus manual checks of the affected
+learner path on each supported platform.
 
 ## Change policy
 

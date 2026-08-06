@@ -190,6 +190,13 @@ if (agentWorkflow) {
     /agentId !== 'project-manager'/.test(validationCode),
     "Validation: active agent allow-list check is missing",
   );
+  check(
+    /schemaVersion === 3/.test(validationCode) &&
+      /rawHistory\.length > 12/.test(validationCode) &&
+      /historyCharacters > 24000/.test(validationCode) &&
+      /uuidPattern\.test\(requestId\)/.test(validationCode),
+    "Validation: durable-history contract version, request ID, turn, or character limit is missing",
+  );
 
   const condition = nodeByName(agentWorkflow, "Request Is Valid?");
   check(condition?.type === "n8n-nodes-base.if", "Validation branch: wrong node type");
@@ -254,26 +261,21 @@ if (agentWorkflow) {
     "Claude model must be connected to the agent",
   );
 
-  const memory = nodeByName(agentWorkflow, "Conversation Memory");
-  check(
-    memory?.type === "@n8n/n8n-nodes-langchain.memoryBufferWindow" &&
-      memory?.typeVersion === 1.4,
-    "Memory: expected Simple Memory 1.4",
+  const memory = agentWorkflow.nodes.find(
+    (node) => node.name === "Conversation Memory",
   );
   check(
-    memory?.parameters?.sessionIdType === "customKey" &&
-      /Validate and Normalise/.test(memory?.parameters?.sessionKey ?? ""),
-    "Memory: must be keyed by the validated browser session",
+    memory === undefined,
+    "Memory: process-local Simple Memory must be removed when SQLite history is authoritative",
   );
+  const contextBuilder = nodeByName(agentWorkflow, "Build Agent Context");
+  const durableContextCode = contextBuilder?.parameters?.jsCode ?? "";
   check(
-    memory?.parameters?.contextWindowLength === 6,
-    "Memory: context window must remain six interactions",
-  );
-  check(
-    connectionTargets(agentWorkflow, "Conversation Memory", "ai_memory", 0).includes(
-      "Project Partner Agent",
-    ),
-    "Memory must be connected to the agent",
+    /BEGIN SAVED CONVERSATION HISTORY/.test(durableContextCode) &&
+      /EARLIER USER/.test(durableContextCode) &&
+      /CURRENT USER INSTRUCTION/.test(durableContextCode) &&
+      /never replay an earlier confirmation/.test(durableContextCode),
+    "Memory: validated SQLite history must be labelled and kept distinct from the current instruction",
   );
 
   const listTool = nodeByName(agentWorkflow, "list_tasks");

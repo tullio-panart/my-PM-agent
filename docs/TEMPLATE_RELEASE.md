@@ -27,15 +27,14 @@ Do not squash or merge a later stacked PR directly into `main` before its base. 
 From the repository root:
 
 ```bash
-node scripts/validate-template-readiness.mjs
-
-./scripts/test-phase6.sh
-./scripts/test-phase7.sh
-./scripts/test-phase8.sh
+node scripts/validate-release.mjs
+node scripts/validate-workflows.mjs
 ./scripts/evaluate-pilot.sh
 ```
 
-The readiness check verifies the expected learner entry points, documentation, screenshots, workflow set, executable macOS helpers, Markdown links, ignored secret locations, and absence of Git LFS pointers.
+Release validation verifies the version and lock metadata, learner entry points,
+workflow set, launch helpers, and instructor-kit metadata. Workflow validation
+checks the reviewed n8n exports without starting the stack.
 
 The planned pilot was explicitly waived by the repository owner on 2026-07-27.
 The evaluator remains `NO_GO` and must not be changed with invented evidence.
