@@ -56,6 +56,9 @@ const runtimeRoot = resolve(
 const npmInstallTimeoutMs = 30 * 60 * 1_000;
 const npmCommandTimeoutMs = 10 * 60 * 1_000;
 const n8nCliTimeoutMs = 5 * 60 * 1_000;
+// Chat history is schema 1; domain-research business memory and saved SEO
+// snapshots add schemas 2 and 3 through additive migrations.
+const chatDatabaseSchemaVersion = 3;
 
 const paths = {
   envFile: join(projectRoot, ".env"),
@@ -111,6 +114,12 @@ const workflowIds = {
     "phase5ProposeCreateTask",
     "phase5ProposeTaskStatus",
     "phase5ConfirmTaskWrite",
+    "phase9StartDomainResearch",
+    "phase9CompleteDomainResearch",
+    "phase9GetBusinessMemory",
+    "phase11StartPaidDomainResearch",
+    "phase11CompletePaidDomainResearch",
+    "phase11GetPaidDomainResearch",
   ],
 };
 
@@ -125,6 +134,15 @@ const exportedWorkflowFiles = [
   ["phase5ProposeCreateTask", "30-tool-propose-create-task.json"],
   ["phase5ProposeTaskStatus", "31-tool-propose-update-task-status.json"],
   ["phase5ConfirmTaskWrite", "40-confirm-task-write.json"],
+  ["phase9StartDomainResearch", "50-tool-start-domain-research.json"],
+  ["phase9CompleteDomainResearch", "51-tool-complete-domain-research.json"],
+  ["phase9GetBusinessMemory", "52-tool-get-business-memory.json"],
+  ["phase11StartPaidDomainResearch", "53-tool-start-paid-domain-research.json"],
+  [
+    "phase11CompletePaidDomainResearch",
+    "54-tool-complete-paid-domain-research.json",
+  ],
+  ["phase11GetPaidDomainResearch", "55-tool-get-paid-domain-research.json"],
   ["phase3AgentHealth", "90-debug-agent-health.json"],
 ];
 
@@ -1956,8 +1974,13 @@ async function commandDiagnose() {
   }
   if (existsSync(paths.chatDatabase)) {
     const chatDatabaseCheck = sqliteQuickCheck(paths.chatDatabase);
-    if (chatDatabaseCheck.ok && chatDatabaseCheck.schemaVersion === 1) {
-      ok("The local chat database and search index are ready (schema 1).");
+    if (
+      chatDatabaseCheck.ok &&
+      chatDatabaseCheck.schemaVersion === chatDatabaseSchemaVersion
+    ) {
+      ok(
+        `The local chat database and search index are ready (schema ${chatDatabaseSchemaVersion}).`,
+      );
     } else {
       failure(
         "The local chat database failed its integrity or schema check. Create a private backup before troubleshooting it.",

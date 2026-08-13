@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 3;
 const DEFAULT_TITLE = "New conversation";
 const MAX_TITLE_LENGTH = 80;
 const MAX_SEARCH_LENGTH = 200;
@@ -74,6 +74,111 @@ export interface HistoryMessage {
   content: string;
 }
 
+export interface BusinessMemoryCompetitors {
+  direct: Array<Record<string, unknown>>;
+  seo: Array<Record<string, unknown>>;
+  adjacent: Array<Record<string, unknown>>;
+}
+
+export interface BusinessMemoryInput {
+  schemaVersion: 1;
+  jobId: string;
+  status: "completed" | "partial";
+  domain: string;
+  companyOverview: string;
+  profile: Record<string, unknown>;
+  competitors: BusinessMemoryCompetitors;
+  seedKeywords: string[];
+  keywordCandidates: Array<Record<string, unknown>>;
+  keywordGroups: Array<Record<string, unknown>>;
+  sources: Array<Record<string, unknown>>;
+  warnings: string[];
+  researchSummary: string;
+  evidenceQuality: Record<string, unknown>;
+  researchedAt?: string;
+}
+
+export interface BusinessMemoryRecord extends BusinessMemoryInput {
+  researchedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DomainResearchJobRecord {
+  jobId: string;
+  sessionId: string;
+  domain: string;
+  status: "queued" | "completed" | "partial" | "failed";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PaidResearchStatus = "completed" | "partial" | "failed";
+export type PaidResearchDepth = "refresh" | "standard" | "deep";
+export type PaidComponentStatus =
+  | "success"
+  | "no_results"
+  | "failed"
+  | "unavailable"
+  | "skipped";
+
+export interface SeoSnapshotInput {
+  schemaVersion: 1;
+  jobId: string;
+  status: PaidResearchStatus;
+  researchDepth: PaidResearchDepth;
+  domain: string;
+  locationCode: number;
+  languageCode: string;
+  device: "desktop" | "mobile";
+  costLimitUsd: number;
+  actualCostUsd: number;
+  componentStatus: Record<string, PaidComponentStatus>;
+  offeringProfile: Record<string, unknown>;
+  rankedKeywords: Array<Record<string, unknown>>;
+  keywordCandidates: Array<Record<string, unknown>>;
+  selectedKeywords: Array<Record<string, unknown>>;
+  seoCompetitors: Array<Record<string, unknown>>;
+  serpEvidence: Array<Record<string, unknown>>;
+  sources: Array<Record<string, unknown>>;
+  warnings: string[];
+  evidenceSummary: Record<string, unknown>;
+  capturedAt?: string;
+  expiresAt?: string;
+}
+
+export interface SeoSnapshotRecord extends SeoSnapshotInput {
+  snapshotId: string;
+  sessionId: string;
+  capturedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeoSnapshotSummary {
+  snapshotId: string;
+  jobId: string;
+  status: PaidResearchStatus;
+  researchDepth: PaidResearchDepth;
+  domain: string;
+  locationCode: number;
+  languageCode: string;
+  actualCostUsd: number;
+  capturedAt: string;
+  updatedAt: string;
+  warningCount: number;
+}
+
+export interface BusinessMemorySummary {
+  jobId: string;
+  status: "completed" | "partial";
+  domain: string;
+  brandName: string;
+  warningCount: number;
+  researchedAt: string;
+  updatedAt: string;
+}
+
 export interface BeginTurnInput {
   conversationId: string;
   agentId: string;
@@ -139,6 +244,55 @@ interface SearchRow {
   created_at: string;
 }
 
+interface BusinessMemoryRow {
+  schema_version: number;
+  job_id: string;
+  status: "completed" | "partial";
+  domain: string;
+  company_overview: string;
+  profile_json: string;
+  competitors_json: string;
+  seed_keywords_json: string;
+  keyword_candidates_json: string;
+  keyword_groups_json: string;
+  sources_json: string;
+  warnings_json: string;
+  research_summary: string;
+  evidence_quality_json: string;
+  researched_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SeoSnapshotRow {
+  snapshot_id: string;
+  job_id: string;
+  session_id: string;
+  schema_version: number;
+  status: PaidResearchStatus;
+  research_depth: PaidResearchDepth;
+  domain: string;
+  location_code: number;
+  language_code: string;
+  device: "desktop" | "mobile";
+  cost_limit_usd: number;
+  actual_cost_usd: number;
+  component_status_json: string;
+  offering_profile_json: string;
+  ranked_keywords_json: string;
+  keyword_candidates_json: string;
+  selected_keywords_json: string;
+  seo_competitors_json: string;
+  serp_evidence_json: string;
+  sources_json: string;
+  warnings_json: string;
+  evidence_summary_json: string;
+  captured_at: string;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -170,6 +324,62 @@ function searchExpression(value: string): string {
     .filter(Boolean)
     .map((term) => `"${term.replaceAll('"', '""')}"*`)
     .join(" AND ");
+}
+
+function businessMemoryFromRow(row: BusinessMemoryRow): BusinessMemoryRecord {
+  return {
+    schemaVersion: 1,
+    jobId: row.job_id,
+    status: row.status,
+    domain: row.domain,
+    companyOverview: row.company_overview,
+    profile: JSON.parse(row.profile_json) as Record<string, unknown>,
+    competitors: JSON.parse(row.competitors_json) as BusinessMemoryCompetitors,
+    seedKeywords: JSON.parse(row.seed_keywords_json) as string[],
+    keywordCandidates: JSON.parse(row.keyword_candidates_json) as Array<Record<string, unknown>>,
+    keywordGroups: JSON.parse(row.keyword_groups_json) as Array<Record<string, unknown>>,
+    sources: JSON.parse(row.sources_json) as Array<Record<string, unknown>>,
+    warnings: JSON.parse(row.warnings_json) as string[],
+    researchSummary: row.research_summary,
+    evidenceQuality: JSON.parse(row.evidence_quality_json) as Record<string, unknown>,
+    researchedAt: row.researched_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function seoSnapshotFromRow(row: SeoSnapshotRow): SeoSnapshotRecord {
+  const result: SeoSnapshotRecord = {
+    schemaVersion: 1,
+    snapshotId: row.snapshot_id,
+    jobId: row.job_id,
+    sessionId: row.session_id,
+    status: row.status,
+    researchDepth: row.research_depth,
+    domain: row.domain,
+    locationCode: Number(row.location_code),
+    languageCode: row.language_code,
+    device: row.device,
+    costLimitUsd: Number(row.cost_limit_usd),
+    actualCostUsd: Number(row.actual_cost_usd),
+    componentStatus: JSON.parse(row.component_status_json) as Record<string, PaidComponentStatus>,
+    offeringProfile: JSON.parse(row.offering_profile_json) as Record<string, unknown>,
+    rankedKeywords: JSON.parse(row.ranked_keywords_json) as Array<Record<string, unknown>>,
+    keywordCandidates: JSON.parse(row.keyword_candidates_json) as Array<Record<string, unknown>>,
+    selectedKeywords: JSON.parse(row.selected_keywords_json) as Array<Record<string, unknown>>,
+    seoCompetitors: JSON.parse(row.seo_competitors_json) as Array<Record<string, unknown>>,
+    serpEvidence: JSON.parse(row.serp_evidence_json) as Array<Record<string, unknown>>,
+    sources: JSON.parse(row.sources_json) as Array<Record<string, unknown>>,
+    warnings: JSON.parse(row.warnings_json) as string[],
+    evidenceSummary: JSON.parse(row.evidence_summary_json) as Record<string, unknown>,
+    capturedAt: row.captured_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.expires_at !== null) {
+    result.expiresAt = row.expires_at;
+  }
+  return result;
 }
 
 function encodeCursor(updatedAt: string, id: string): string {
@@ -300,7 +510,117 @@ export class ChatStore {
         `);
       });
     }
+    if (version < 2) {
+      this.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE business_memory (
+            domain TEXT PRIMARY KEY,
+            schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+            job_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('completed', 'partial')),
+            company_overview TEXT NOT NULL,
+            profile_json TEXT NOT NULL,
+            competitors_json TEXT NOT NULL,
+            seed_keywords_json TEXT NOT NULL,
+            keyword_candidates_json TEXT NOT NULL,
+            keyword_groups_json TEXT NOT NULL,
+            sources_json TEXT NOT NULL,
+            warnings_json TEXT NOT NULL,
+            research_summary TEXT NOT NULL,
+            evidence_quality_json TEXT NOT NULL,
+            researched_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          ) STRICT;
+
+          CREATE INDEX business_memory_updated_at
+          ON business_memory(updated_at DESC);
+
+          CREATE TABLE domain_research_jobs (
+            job_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('queued', 'completed', 'partial')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          ) STRICT;
+
+          CREATE INDEX domain_research_jobs_session
+          ON domain_research_jobs(session_id, updated_at DESC);
+
+          PRAGMA user_version = 2;
+        `);
+      });
+    }
+    if (version < 3) {
+      this.transaction(() => {
+        this.database.exec(`
+          DROP INDEX domain_research_jobs_session;
+          ALTER TABLE domain_research_jobs RENAME TO domain_research_jobs_v2;
+
+          CREATE TABLE domain_research_jobs (
+            job_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('queued', 'completed', 'partial', 'failed')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          ) STRICT;
+
+          INSERT INTO domain_research_jobs(
+            job_id, session_id, domain, status, created_at, updated_at
+          )
+          SELECT job_id, session_id, domain, status, created_at, updated_at
+          FROM domain_research_jobs_v2;
+
+          DROP TABLE domain_research_jobs_v2;
+
+          CREATE INDEX domain_research_jobs_session
+          ON domain_research_jobs(session_id, updated_at DESC);
+
+          CREATE TABLE seo_snapshots (
+            snapshot_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL UNIQUE,
+            session_id TEXT NOT NULL,
+            schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+            status TEXT NOT NULL CHECK (status IN ('completed', 'partial', 'failed')),
+            research_depth TEXT NOT NULL CHECK (research_depth IN ('refresh', 'standard', 'deep')),
+            domain TEXT NOT NULL,
+            location_code INTEGER NOT NULL,
+            language_code TEXT NOT NULL,
+            device TEXT NOT NULL CHECK (device IN ('desktop', 'mobile')),
+            cost_limit_usd REAL NOT NULL CHECK (cost_limit_usd >= 0),
+            actual_cost_usd REAL NOT NULL CHECK (actual_cost_usd >= 0),
+            component_status_json TEXT NOT NULL,
+            offering_profile_json TEXT NOT NULL,
+            ranked_keywords_json TEXT NOT NULL,
+            keyword_candidates_json TEXT NOT NULL,
+            selected_keywords_json TEXT NOT NULL,
+            seo_competitors_json TEXT NOT NULL,
+            serp_evidence_json TEXT NOT NULL,
+            sources_json TEXT NOT NULL,
+            warnings_json TEXT NOT NULL,
+            evidence_summary_json TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            expires_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          ) STRICT;
+
+          CREATE INDEX seo_snapshots_domain_captured
+          ON seo_snapshots(domain, captured_at DESC);
+
+          CREATE INDEX seo_snapshots_session_updated
+          ON seo_snapshots(session_id, updated_at DESC);
+
+          PRAGMA user_version = 3;
+        `);
+      });
+    }
     this.database.prepare("SELECT rowid FROM message_search LIMIT 1").all();
+    this.database.prepare("SELECT domain FROM business_memory LIMIT 1").all();
+    this.database.prepare("SELECT job_id FROM domain_research_jobs LIMIT 1").all();
+    this.database.prepare("SELECT snapshot_id FROM seo_snapshots LIMIT 1").all();
   }
 
   private transaction<T>(operation: () => T): T {
@@ -730,6 +1050,367 @@ export class ChatStore {
       snippet: row.snippet,
       createdAt: row.created_at,
     }));
+  }
+
+  saveBusinessMemory(input: BusinessMemoryInput): BusinessMemoryRecord {
+    const timestamp = nowIso();
+    const researchedAt = input.researchedAt ?? timestamp;
+    this.database
+      .prepare(
+        `INSERT INTO business_memory(
+           domain, schema_version, job_id, status, company_overview,
+           profile_json, competitors_json, seed_keywords_json,
+           keyword_candidates_json, keyword_groups_json, sources_json,
+           warnings_json, research_summary, evidence_quality_json,
+           researched_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(domain) DO UPDATE SET
+           schema_version = excluded.schema_version,
+           job_id = excluded.job_id,
+           status = excluded.status,
+           company_overview = excluded.company_overview,
+           profile_json = excluded.profile_json,
+           competitors_json = excluded.competitors_json,
+           seed_keywords_json = excluded.seed_keywords_json,
+           keyword_candidates_json = excluded.keyword_candidates_json,
+           keyword_groups_json = excluded.keyword_groups_json,
+           sources_json = excluded.sources_json,
+           warnings_json = excluded.warnings_json,
+           research_summary = excluded.research_summary,
+           evidence_quality_json = excluded.evidence_quality_json,
+           researched_at = excluded.researched_at,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.domain,
+        input.schemaVersion,
+        input.jobId,
+        input.status,
+        input.companyOverview,
+        JSON.stringify(input.profile),
+        JSON.stringify(input.competitors),
+        JSON.stringify(input.seedKeywords),
+        JSON.stringify(input.keywordCandidates),
+        JSON.stringify(input.keywordGroups),
+        JSON.stringify(input.sources),
+        JSON.stringify(input.warnings),
+        input.researchSummary,
+        JSON.stringify(input.evidenceQuality),
+        researchedAt,
+        timestamp,
+        timestamp,
+      );
+    const stored = this.getBusinessMemory(input.domain);
+    if (!stored) {
+      throw new Error("Stored business memory could not be read");
+    }
+    return stored;
+  }
+
+  registerDomainResearchJob(
+    sessionId: string,
+    jobId: string,
+    domain: string,
+  ): void {
+    this.transaction(() => {
+      const existing = this.database
+        .prepare("SELECT session_id, domain FROM domain_research_jobs WHERE job_id = ?")
+        .get(jobId) as { session_id: string; domain: string } | undefined;
+      if (
+        existing &&
+        (existing.session_id !== sessionId || existing.domain !== domain)
+      ) {
+        throw new Error("Domain research job belongs to a different conversation");
+      }
+      const timestamp = nowIso();
+      this.database
+        .prepare(
+          `INSERT INTO domain_research_jobs(
+             job_id, session_id, domain, status, created_at, updated_at
+           ) VALUES (?, ?, ?, 'queued', ?, ?)
+           ON CONFLICT(job_id) DO UPDATE SET updated_at = excluded.updated_at`,
+        )
+        .run(jobId, sessionId, domain, timestamp, timestamp);
+    });
+  }
+
+  getDomainResearchJob(
+    sessionId: string,
+    jobId: string,
+  ): DomainResearchJobRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT job_id, session_id, domain, status, created_at, updated_at
+         FROM domain_research_jobs
+         WHERE job_id = ?`,
+      )
+      .get(jobId) as
+      | {
+          job_id: string;
+          session_id: string;
+          domain: string;
+          status: DomainResearchJobRecord["status"];
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    // A job is only visible to the conversation that registered it.
+    if (!row || row.session_id !== sessionId) {
+      return undefined;
+    }
+    return {
+      jobId: row.job_id,
+      sessionId: row.session_id,
+      domain: row.domain,
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  saveBusinessMemoryForJob(
+    sessionId: string,
+    input: BusinessMemoryInput,
+  ): BusinessMemoryRecord {
+    return this.transaction(() => {
+      const job = this.database
+        .prepare(
+          "SELECT session_id, domain FROM domain_research_jobs WHERE job_id = ?",
+        )
+        .get(input.jobId) as { session_id: string; domain: string } | undefined;
+      if (!job || job.session_id !== sessionId || job.domain !== input.domain) {
+        throw new Error("Domain research job is not registered to this conversation");
+      }
+      const stored = this.saveBusinessMemory(input);
+      this.database
+        .prepare(
+          `UPDATE domain_research_jobs
+           SET status = ?, updated_at = ?
+           WHERE job_id = ? AND session_id = ?`,
+        )
+        .run(input.status, nowIso(), input.jobId, sessionId);
+      return stored;
+    });
+  }
+
+  savePaidDomainResearchForJob(
+    sessionId: string,
+    snapshot: SeoSnapshotInput,
+    memory?: BusinessMemoryInput,
+  ): { snapshot: SeoSnapshotRecord; memory?: BusinessMemoryRecord } {
+    return this.transaction(() => {
+      const job = this.database
+        .prepare(
+          "SELECT session_id, domain FROM domain_research_jobs WHERE job_id = ?",
+        )
+        .get(snapshot.jobId) as { session_id: string; domain: string } | undefined;
+      if (!job || job.session_id !== sessionId || job.domain !== snapshot.domain) {
+        throw new Error("Paid domain research job is not registered to this conversation");
+      }
+      if (snapshot.status !== "failed") {
+        if (
+          memory === undefined ||
+          memory.jobId !== snapshot.jobId ||
+          memory.domain !== snapshot.domain ||
+          memory.status !== snapshot.status
+        ) {
+          throw new Error("Successful paid research requires matching business memory");
+        }
+      } else if (memory !== undefined) {
+        throw new Error("Failed paid research cannot replace business memory");
+      }
+
+      const existing = this.database
+        .prepare("SELECT snapshot_id, created_at FROM seo_snapshots WHERE job_id = ?")
+        .get(snapshot.jobId) as { snapshot_id: string; created_at: string } | undefined;
+      const timestamp = nowIso();
+      const capturedAt = snapshot.capturedAt ?? timestamp;
+      const snapshotId = existing?.snapshot_id ?? randomUUID();
+      const createdAt = existing?.created_at ?? timestamp;
+      this.database
+        .prepare(
+          `INSERT INTO seo_snapshots(
+             snapshot_id, job_id, session_id, schema_version, status,
+             research_depth, domain, location_code, language_code, device,
+             cost_limit_usd, actual_cost_usd, component_status_json,
+             offering_profile_json, ranked_keywords_json,
+             keyword_candidates_json, selected_keywords_json,
+             seo_competitors_json, serp_evidence_json, sources_json,
+             warnings_json, evidence_summary_json, captured_at, expires_at,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(job_id) DO UPDATE SET
+             status = excluded.status,
+             research_depth = excluded.research_depth,
+             location_code = excluded.location_code,
+             language_code = excluded.language_code,
+             device = excluded.device,
+             cost_limit_usd = excluded.cost_limit_usd,
+             actual_cost_usd = excluded.actual_cost_usd,
+             component_status_json = excluded.component_status_json,
+             offering_profile_json = excluded.offering_profile_json,
+             ranked_keywords_json = excluded.ranked_keywords_json,
+             keyword_candidates_json = excluded.keyword_candidates_json,
+             selected_keywords_json = excluded.selected_keywords_json,
+             seo_competitors_json = excluded.seo_competitors_json,
+             serp_evidence_json = excluded.serp_evidence_json,
+             sources_json = excluded.sources_json,
+             warnings_json = excluded.warnings_json,
+             evidence_summary_json = excluded.evidence_summary_json,
+             captured_at = excluded.captured_at,
+             expires_at = excluded.expires_at,
+             updated_at = excluded.updated_at`,
+        )
+        .run(
+          snapshotId,
+          snapshot.jobId,
+          sessionId,
+          snapshot.schemaVersion,
+          snapshot.status,
+          snapshot.researchDepth,
+          snapshot.domain,
+          snapshot.locationCode,
+          snapshot.languageCode,
+          snapshot.device,
+          snapshot.costLimitUsd,
+          snapshot.actualCostUsd,
+          JSON.stringify(snapshot.componentStatus),
+          JSON.stringify(snapshot.offeringProfile),
+          JSON.stringify(snapshot.rankedKeywords),
+          JSON.stringify(snapshot.keywordCandidates),
+          JSON.stringify(snapshot.selectedKeywords),
+          JSON.stringify(snapshot.seoCompetitors),
+          JSON.stringify(snapshot.serpEvidence),
+          JSON.stringify(snapshot.sources),
+          JSON.stringify(snapshot.warnings),
+          JSON.stringify(snapshot.evidenceSummary),
+          capturedAt,
+          snapshot.expiresAt ?? null,
+          createdAt,
+          timestamp,
+        );
+
+      const savedMemory = memory === undefined ? undefined : this.saveBusinessMemory(memory);
+      this.database
+        .prepare(
+          `UPDATE domain_research_jobs
+           SET status = ?, updated_at = ?
+           WHERE job_id = ? AND session_id = ?`,
+        )
+        .run(snapshot.status, timestamp, snapshot.jobId, sessionId);
+      const savedSnapshot = this.getSeoSnapshotForJob(sessionId, snapshot.jobId);
+      if (savedSnapshot === undefined) {
+        throw new Error("Stored paid domain research snapshot could not be read");
+      }
+      return {
+        snapshot: savedSnapshot,
+        ...(savedMemory === undefined ? {} : { memory: savedMemory }),
+      };
+    });
+  }
+
+  getSeoSnapshotForJob(
+    sessionId: string,
+    jobId: string,
+  ): SeoSnapshotRecord | undefined {
+    const row = this.database
+      .prepare("SELECT * FROM seo_snapshots WHERE job_id = ? AND session_id = ?")
+      .get(jobId, sessionId) as SeoSnapshotRow | undefined;
+    return row === undefined ? undefined : seoSnapshotFromRow(row);
+  }
+
+  getLatestSeoSnapshot(domain: string): SeoSnapshotRecord | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM seo_snapshots
+         WHERE domain = ? AND status IN ('completed', 'partial')
+         ORDER BY captured_at DESC, updated_at DESC
+         LIMIT 1`,
+      )
+      .get(domain) as SeoSnapshotRow | undefined;
+    return row === undefined ? undefined : seoSnapshotFromRow(row);
+  }
+
+  listSeoSnapshotSummaries(domain?: string, limit = 20): SeoSnapshotSummary[] {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const rows = (domain === undefined
+      ? this.database
+          .prepare("SELECT * FROM seo_snapshots ORDER BY captured_at DESC LIMIT ?")
+          .all(boundedLimit)
+      : this.database
+          .prepare(
+            "SELECT * FROM seo_snapshots WHERE domain = ? ORDER BY captured_at DESC LIMIT ?",
+          )
+          .all(domain, boundedLimit)) as unknown as SeoSnapshotRow[];
+    return rows.map((row) => ({
+      snapshotId: row.snapshot_id,
+      jobId: row.job_id,
+      status: row.status,
+      researchDepth: row.research_depth,
+      domain: row.domain,
+      locationCode: Number(row.location_code),
+      languageCode: row.language_code,
+      actualCostUsd: Number(row.actual_cost_usd),
+      capturedAt: row.captured_at,
+      updatedAt: row.updated_at,
+      warningCount: (JSON.parse(row.warnings_json) as unknown[]).length,
+    }));
+  }
+
+  getBusinessMemory(domain: string): BusinessMemoryRecord | undefined {
+    const row = this.database
+      .prepare("SELECT * FROM business_memory WHERE domain = ?")
+      .get(domain) as BusinessMemoryRow | undefined;
+    return row === undefined ? undefined : businessMemoryFromRow(row);
+  }
+
+  listBusinessMemory(limit = 50): BusinessMemoryRecord[] {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM business_memory
+         ORDER BY updated_at DESC, domain ASC
+         LIMIT ?`,
+      )
+      .all(boundedLimit) as unknown as BusinessMemoryRow[];
+    return rows.map(businessMemoryFromRow);
+  }
+
+  listBusinessMemorySummaries(limit = 50): BusinessMemorySummary[] {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const rows = this.database
+      .prepare(
+        `SELECT job_id, status, domain, profile_json, warnings_json,
+                researched_at, updated_at
+         FROM business_memory
+         ORDER BY updated_at DESC, domain ASC
+         LIMIT ?`,
+      )
+      .all(boundedLimit) as unknown as Array<
+      Pick<
+        BusinessMemoryRow,
+        | "job_id"
+        | "status"
+        | "domain"
+        | "profile_json"
+        | "warnings_json"
+        | "researched_at"
+        | "updated_at"
+      >
+    >;
+    return rows.map((row) => {
+      const profile = JSON.parse(row.profile_json) as Record<string, unknown>;
+      const warnings = JSON.parse(row.warnings_json) as unknown[];
+      return {
+        jobId: row.job_id,
+        status: row.status,
+        domain: row.domain,
+        brandName: typeof profile.brandName === "string" ? profile.brandName : "",
+        warningCount: Array.isArray(warnings) ? warnings.length : 0,
+        researchedAt: row.researched_at,
+        updatedAt: row.updated_at,
+      };
+    });
   }
 
   markPendingInterrupted(): number {

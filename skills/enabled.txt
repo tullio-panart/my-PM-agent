@@ -3,3 +3,5 @@ project-assistant
 meeting-analysis
 task-capture
 weekly-status
+paid-domain-research
+domain-research

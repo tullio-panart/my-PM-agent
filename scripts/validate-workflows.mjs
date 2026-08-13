@@ -16,6 +16,12 @@ const expectedFiles = [
   "30-tool-propose-create-task.json",
   "31-tool-propose-update-task-status.json",
   "40-confirm-task-write.json",
+  "50-tool-start-domain-research.json",
+  "51-tool-complete-domain-research.json",
+  "52-tool-get-business-memory.json",
+  "53-tool-start-paid-domain-research.json",
+  "54-tool-complete-paid-domain-research.json",
+  "55-tool-get-paid-domain-research.json",
   "90-debug-agent-health.json",
 ];
 const failures = [];
@@ -150,7 +156,7 @@ if (agentWorkflow) {
   );
   check(
     agentWorkflow.nodes.filter((node) => node.type !== "n8n-nodes-base.stickyNote")
-      .length <= 17,
+      .length <= 22,
     "Agent workflow must keep confirmation routing and tool wiring explainable",
   );
   check(
@@ -299,8 +305,18 @@ if (agentWorkflow) {
     .map(([name]) => name);
   check(
     JSON.stringify(connectedToolNames) ===
-      JSON.stringify(["list_tasks", "create_task", "update_task_status"]),
-    "Agent: only the reviewed read and proposal-only task tools may be connected",
+      JSON.stringify([
+        "list_tasks",
+        "create_task",
+        "update_task_status",
+        "start_domain_research",
+        "complete_domain_research",
+        "get_business_memory",
+        "start_paid_domain_research",
+        "complete_paid_domain_research",
+        "get_paid_domain_research",
+      ]),
+    "Agent: only the reviewed task and domain-research tools may be connected",
   );
 
   const createTool = nodeByName(agentWorkflow, "create_task");
@@ -899,6 +915,8 @@ check(
       "meeting-analysis",
       "task-capture",
       "weekly-status",
+      "paid-domain-research",
+      "domain-research",
     ]),
   "Enabled skill list must contain the reviewed Project Manager skills",
 );
@@ -921,8 +939,22 @@ check(
         ["list_tasks", "read", "automatic"],
         ["create_task", "write", "confirmation_required"],
         ["update_task_status", "write", "confirmation_required"],
+        [
+          "start_domain_research",
+          "bounded_local_write",
+          "explicit_request_required",
+        ],
+        ["complete_domain_research", "read", "explicit_request_required"],
+        ["get_business_memory", "read", "automatic"],
+        [
+          "start_paid_domain_research",
+          "paid_external_read",
+          "direct_request_defaults_to_standard_paid_with_free_fallback",
+        ],
+        ["complete_paid_domain_research", "read", "explicit_request_required"],
+        ["get_paid_domain_research", "read", "automatic"],
       ]),
-  "Tool policy must classify the reviewed read and write tools",
+  "Tool policy must classify the reviewed task, free research, and paid research tools",
 );
 check(
   toolPolicy.tools
