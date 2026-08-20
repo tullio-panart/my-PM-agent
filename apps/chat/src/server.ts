@@ -1,9 +1,16 @@
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import {
+  createAccessGate,
+  MIN_PASSCODE_LENGTH,
+  type AccessGate,
+} from "./access.js";
 import { loadAgentRegistry } from "./agents.js";
 import { createChatServer } from "./app.js";
 import { ChatStore } from "./chat-store.js";
 import { DocumentStore } from "./documents.js";
+import { ProfileStore } from "./profile.js";
+import { AgentSettingsStore } from "./agent-settings.js";
 
 const DEFAULT_PORT = 3_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -37,12 +44,44 @@ const documentWorkerUrl =
 const chatDataDirectory =
   process.env.CHAT_DATA_DIRECTORY ??
   fileURLToPath(new URL("../../../data/chat", import.meta.url));
+const profileDataDirectory =
+  process.env.PROFILE_DATA_DIRECTORY ??
+  fileURLToPath(new URL("../../../data/profile", import.meta.url));
+const skillsDirectory =
+  process.env.SKILLS_DIRECTORY ??
+  fileURLToPath(new URL("../../../skills", import.meta.url));
+const skillPacksDirectory =
+  process.env.SKILL_PACKS_DIRECTORY ??
+  fileURLToPath(new URL("../../../skill-packs", import.meta.url));
 
 try {
   new URL(upstreamUrl);
 } catch {
   console.error("N8N_CHAT_WEBHOOK_URL must be a valid URL.");
   process.exit(1);
+}
+
+// The gate exists only when a passcode is configured. On a learner's own
+// computer nothing sets one, so the local experience is unchanged; the cloud
+// runner refuses to start without one.
+const passcode = process.env.AGENT_PASSCODE ?? "";
+let accessGate: AccessGate | undefined;
+if (passcode !== "") {
+  if (passcode.length < MIN_PASSCODE_LENGTH) {
+    console.error(
+      `AGENT_PASSCODE must be at least ${MIN_PASSCODE_LENGTH} characters.`,
+    );
+    process.exit(1);
+  }
+  accessGate = createAccessGate({
+    passcode,
+    // Supplied by the cloud runner from the persistent volume, so a redeploy
+    // does not sign the learner out. A random one here would work but would
+    // not survive a restart.
+    sessionSecret: process.env.AGENT_SESSION_SECRET ?? "",
+    secureCookie: process.env.AGENT_COOKIE_SECURE !== "false",
+    proxyHops: positiveInteger(process.env.AGENT_PROXY_HOPS, 1),
+  });
 }
 
 const agents = await loadAgentRegistry(agentRegistryPath);
@@ -52,11 +91,26 @@ const documentStore = new DocumentStore(
 );
 await documentStore.cleanupExpired();
 const chatStore = new ChatStore(join(chatDataDirectory, "chat.sqlite"));
+const profileStore = new ProfileStore(profileDataDirectory);
+const agentSettingsStore = new AgentSettingsStore(
+  profileDataDirectory,
+  agents.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    fields: agent.settingsFields,
+  })),
+);
 
 const server = createChatServer({
+  accessGate,
   agents,
   chatStore,
   documentStore,
+  profileStore,
+  agentSettingsStore,
+  skillsDirectory,
+  skillPacksDirectory,
+  profileDirectory: profileDataDirectory,
   publicDirectory,
   upstreamUrl,
   timeoutMs,
@@ -70,6 +124,11 @@ server.listen(port, listenAddress, () => {
   );
   console.log(
     `Chat history ready with schema ${chatStore.health().schemaVersion}.`,
+  );
+  console.log(
+    accessGate === undefined
+      ? "Passcode: not set (correct for a local install; never for a public address)."
+      : "Passcode: on. Visitors must sign in before reaching your agent.",
   );
 });
 

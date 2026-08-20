@@ -1,4 +1,5 @@
 id: linkedin-prospect-search
+agent: sales
 name: LinkedIn Prospect Search
 version: 1.0.0
-description: Build bounded prospect lists from industry, location, job-title, and company-size filters, returning public profile and sourced company URLs.
+description: Find a short evidence-backed list of public professional prospects by role, sector, location, and company size using an explicitly approved paid provider search.
